@@ -1,0 +1,759 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+   name="DTCTD_Spellup2_9"
+   author="DTCTD"
+   id="e50b1d08a0cfc0ee9c442002"
+   language="Lua"
+   purpose="Simple Spellup"
+   date_written="2016-03-10 12:00:00"
+   requires="4.75"
+   version="2.9"
+   save_state="y"
+   >
+<description trim="n">
+<![CDATA[
+
+SPELLUP USAGE:
+
+===== SHOW THIS HELP =============>
+>    spellup help
+        - shows only this help
+>    ww help
+        - all dtctd(tm) plugins show help
+>    su debug
+        - toggle debug mode
+		
+
+===== CASTING SPELLS ==============>
+
+>   Spellup Learned (or similar) 
+        - Aardwolf's built-in Activation of spells. Spells will be auto-renewed.  I can't improve on Lashers function here :)
+		
+===== CONFIGURATION ================>
+>   NoAuto     
+        - shows spells that will not be automagically cast when they expire
+>   NoAuto 58  
+        - an example of adding the spell Invisible to the No Auto list.  
+          Typing this again will toggle if spell 58 is in the list or not.
+>   NoAuto Clear
+        - clears your noauto list
+		  
+>   DisableSpellup 
+        - Will toggle temporarily disable of auto-spellup.  
+          This setting will not be remembered when Mush is closed.  
+          Map this command to an key combination with  -  AcceleratorTo("Ctrl+Delete", "DisableSpellup", sendto.execute)
+
+>   SetClanSn 468   
+        - Will tell the engine to recast version 2 clan skill despite it's 0% practiced skill.  
+          Use your own clan's SN instead of 468. 
+          (Type "slist" to find your clan sn!!)
+
+>   Spellup Reload
+        - Will reload this plugin if you are swapping Alts without restarting Mushclient		  
+
+]]>
+</description>
+</plugin>
+
+<aliases>
+
+	<alias match="^(?:ww|spellup) help$"
+		enabled="y"
+		sequence="100"
+		send_to="12"
+		regexp="y"
+		keep_evaluating="y"		
+	>
+	<send>
+		ColourNote("Chocolate", "", GetPluginInfo (GetPluginID (), 3))
+	</send>
+	</alias>
+
+	<alias
+	   script="SetDebug"
+	   match="^su debug$"
+	   enabled="y"
+	   regexp="y"
+	   sequence="100"
+	   ignore_case="y"
+	>
+	</alias>
+
+	<alias
+	   script="DisableSpellup"
+	   match="DisableSpellup"
+	   enabled="y"
+	   sequence="100"
+	   ignore_case="y"
+	>
+	</alias>
+
+	<alias
+	   script="SetAuto"
+	   match="^noauto ?(.*)?$"
+	   enabled="y"
+	   regexp="y"
+	   sequence="100"
+	   ignore_case="y"
+	>
+	</alias>
+
+	<alias
+	   script="SetClanSn"
+	   match="^SetClanSn ([0-9]+)$"
+	   enabled="y"
+	   regexp="y"
+	   sequence="100"
+	   ignore_case="y"
+	>
+	</alias>
+	
+	<alias
+	   match="Spellup Reload"
+	   script="ReIndexSkills"
+	   enabled="y"
+	   regexp="n"
+	   sequence="100"
+	   ignore_case="y"
+	>
+	</alias>
+	
+	<alias
+		name="ali_do_vis"
+		match="vis"
+		script="do_vis"
+		enabled="y"
+		sequence="1"
+		ignore_case="y"
+	>
+	</alias>
+</aliases>
+
+<triggers>
+
+	<!-- Recovery Capture -->
+	<trigger
+		name="RecoveriesStart"
+		enabled="n"
+		match="^\{recoveries\}$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100"
+		send_to="12"
+	>
+	<send>
+		EnableTrigger("RecoveriesStart", false)
+		EnableTrigger("RecoveriesCapture", true)
+		EnableTrigger("RecoveriesEnd", true)
+	</send>
+	</trigger>
+
+	<trigger
+		name="RecoveriesCapture"
+		enabled="n"
+		match="^[0-9]+,[^,]+,[0-9]+$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100"
+	>
+	</trigger>
+
+	<trigger
+		name="RecoveriesEnd"
+		enabled="n"
+		match="^\{\/recoveries\}$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100"
+		send_to="12"
+	>
+	<send>
+		EnableTrigger("RecoveriesStart", false)
+		EnableTrigger("RecoveriesCapture", false)
+		EnableTrigger("RecoveriesEnd", false)
+	</send>
+	</trigger>
+
+	<!-- Spell List Capture -->
+	<trigger
+		name="SListStart"
+		group="SpellupCapture"
+		script="slist_start"
+		enabled="n"
+		match="\{spellheaders( learned)?\}$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100"
+	>
+	</trigger>
+
+	<trigger
+		name="SListEnd"
+		group="SpellupCapture"
+		script="slist_end"
+		enabled="n"
+		match="^{\/spellheaders\}$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100"
+	>
+	</trigger>
+	<!--
+     SN, Name, target, duration, Pct, recovery, type
+
+     SN         : Spell number as seen in 'showskill'
+     Name       : Name of the skill or spell.
+     Target     : 0 - Special. Target decided in spell (gate etc)
+                  1 - Attack.
+                  2 - Spellup.
+                  3 - Self only.
+                  4 - Object
+     Duration   : If you are affected by the spell, duration in seconds.
+                  0 if not affected.
+     Pct        : Percent practiced.
+     Recovery   : If the skill/spell relies on a recovery to be useable,
+                  the recovery number is here.
+     Type       : 1 = Spell, 2 = Skill
+	-->
+	<trigger
+		name="SListCapture"
+		group="SpellupCapture"
+		enabled="n"
+		match="^(?<sn>[0-9]+),(?<name>[^,]+),(?<target>[0-9]),(?<duration>[0-9]+),(?<percent>[0-9]+),(?<recovery>\-?[0-9]+),(?<type>[0-9]+)$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100"
+		script="slist_capture"
+	>
+	</trigger>
+
+	<trigger
+		name="AffOff"
+		script="aff_off"
+		enabled="n"
+		group="DTCTDSpellup_Tags"
+		match="\{affoff\}(?<sn>[0-9]{1,3})$"
+		omit_from_output="y"
+		regexp="y"
+		sequence="100"
+	>
+	</trigger>
+
+	<trigger
+		name="AffOn"
+		enabled="n"
+		group="DTCTDSpellup_Tags"
+		match="\{affon\}.+$"
+		omit_from_output="y"
+		regexp="y"
+		sequence="100"
+	>
+	</trigger>
+
+	<trigger
+		name="SFail"
+		script="sfail"
+		enabled="n"
+		group="DTCTDSpellup_Tags"
+		match="\{sfail\}(?<sn>[0-9]{1,3})\,[0-9]\,(?<reason>[0-9]+)\,\-?[0-9]+$"
+		omit_from_output="y"
+		regexp="y"
+		sequence="100"
+	>
+	</trigger>
+
+	<trigger
+		name="Recon"
+		enabled="n"
+		group="DTCTDSpellup_Tags"
+		match="\{reco(?:n|ff)\}.+$"
+		omit_from_output="y"
+		regexp="y"
+		sequence="100"
+	>
+	</trigger>
+
+	<trigger
+		 name="SkillGain"
+		 script="skill_gain"
+		 enabled="n"
+		 group="DTCTDSpellup_Tags"
+		 match="\{skillgain\}([0-9]{1,3})\,([0-9]{1,3})$"
+		 omit_from_output="y"
+		 regexp="y"
+		 sequence="100"
+	>
+	</trigger>
+
+</triggers>
+
+<timers>
+
+	<!-- add <timer> items here -->
+
+</timers>
+
+<script>
+<![CDATA[
+
+	local IAC = 255
+	local SB  = 250
+	local TELOPT = 102
+	local SE  = 240
+	local SPELLUPS = 7
+	local SKILLGAINS = 8
+	local GLOBAL_TAG_MUTE = 50
+
+	require "gmcphelper"
+	require "serialize"
+
+	local sList = -1
+	local currentState = -1 -- uninitialized
+	local queuedSpells = {}
+	local noAutoList = {}
+	local spellupDisabled = 0
+	local slistCommandSent = false
+
+	local spellupDebug = tonumber(GetVariable("SpellupDebug")) or 0
+
+	------ Hacks because Aardwolf has funny quirks ----
+
+	local USER_v2_clan_sn = GetVariable("SpellupV2ClanSkill") or 0
+	local inertial_barrier_sn = 121
+	local combat_exceptions = { 
+		[53] = true, -- haste
+		[211] = true, -- berserk
+		[258] = true, -- accel
+		[259] = true, -- lightspeed
+		[335] = true } -- grey aura
+
+	function slist_start(name, line, wildcards)
+		sList = {}
+		EnableTrigger("SListCapture", true)
+		EnableTrigger("SListEnd", true)
+		ColourNote("darkorange", "", "*** Indexing skills/spells...")
+	end
+
+	function slist_capture(name, line, wildcards)
+
+		local textType
+		local sn = tonumber(wildcards.sn)
+		local addItem = false
+
+		if (tonumber(wildcards.type) == 2) then
+			textType = "skill"
+		else
+			textType = "spell"
+		end
+
+		local value = { name = wildcards.name, target = tonumber(wildcards.target), recovery = tonumber(wildcards.recovery), percent = tonumber(wildcards.percent), type = textType }
+
+		-- validate
+		-- bug: need to make inertial barrier work!
+		if (value.target == 0) then
+			if (sn == inertial_barrier_sn or sn == tonumber(USER_v2_clan_sn)) then
+				addItem = true
+			else
+				DebugNote(" *** not indexed - category-validation " .. line)
+			end
+		elseif (value.target == 2 or value.target == 3) then
+			addItem = true
+		else
+			DebugNote(" *** not indexed - target-validation " .. line)
+		end
+
+		if (value.recovery ~= -1) then
+			addItem = false
+			DebugNote(" *** not indexed - recovery-validation " .. line)
+		end
+
+		if (addItem) then
+			-- add to list
+			sList[tonumber(sn)] = value
+			DebugNote(sList[tonumber(sn)].name .. " added")
+		end
+	end
+
+	function slist_end(name, line, wildcards)
+		EnableTriggerGroup("SpellupCapture", false)
+		EnableTriggerGroup("DTCTDSpellup_Tags", true)
+		EnableTrigger("RecoveriesStart", true)
+
+		ColourNote("darkorange", "", "*** Skills/spells indexed.")
+	end
+
+	function aff_off(name, line, wildcards)
+		DebugNote(name .. " - " .. line)
+
+		if (spellupDisabled == 1) then
+			return
+		end
+		
+		local sn = tonumber(wildcards.sn)
+		if (sList[sn] ~= nil) then
+			DebugNote("queuing sn:" .. sn)
+			queuedSpells[sn] = { name = sList[sn].name, reason = "off" }
+		end
+
+		cast_queue()
+	end
+
+	function sfail(name, line, wildcards)
+		DebugNote(name .. " - " .. line)
+
+		if (spellupDisabled == 1) then
+			return
+		end
+
+		local failCode = tonumber(wildcards.reason)
+
+		-- 1 = lost concentration
+		-- 2 = already have affect
+		-- 4 = outta mana
+		-- 6 = Fighting or other 'cant concentrate'.
+		if (failCode == 1 or failCode == 6) then
+
+			local sn = tonumber(wildcards.sn)
+			if (sList[sn] ~= nil) then
+				queuedSpells[sn] = { name = sList[sn].name, reason = "fail" }
+			end
+
+			cast_queue()
+		end
+
+	end
+	
+	function cast_queue()
+		DebugNote("cast_queue()")
+		BuildSkillz()
+
+		-- cast spells from queue
+		DebugNote("queuedSpells:" .. serialize.save_simple(queuedSpells))
+
+		for key, value in pairs(queuedSpells) do
+			DebugNote("noauto : " .. tostring(table.find(key, noAutoList)))
+			
+			local override = false
+			DebugNote("currentState: " .. currentState)
+			if (currentState == 8) then
+				if (table.find(key, combat_exceptions) ~= nil) then
+					override = true
+					DebugNote("combat override:" .. key)
+				else
+					DebugNote("no override:" .. key)
+				end
+			end
+			
+			DebugNote("currentState: " .. currentState .. " override: " .. tostring(override))
+			if (currentState == 3 or override == true) then
+				if (table.find(key, noAutoList) == nil) then
+					if (spellupDisabled == 0) then
+						DebugNote("queue-casting spell " .. key)
+						if (sList[key] ~= nil) then
+							-- stupid exception for version 2 clan skills
+							if (sList[key].percent > 1 or key == tonumber(USER_v2_clan_sn)) then 
+								if (sList[key].type == "spell") then
+									Execute("cast '" .. value.name .. "'")
+								else -- skill
+									if (key == 226) then -- pass without trace
+										Execute("trace")
+									else
+										-- check if it's a two word skill, and use first part
+										local skill = split(value.name, "[^ ]+") -- space delimited
+										Execute(skill[1])
+									end
+								end
+							else
+								DebugNote("sList[" .. key .. "].percent = " .. sList[key].percent)
+							end
+						else
+							DebugNote("sList does not contain key:" .. key)
+						end
+					else
+						DebugNote("Spellup is Disabled")
+					end
+				else
+					DebugNote("NOT queue-casting " .. value.name)
+				end
+				-- item done, remove it from list
+				queuedSpells[key] = nil
+			end
+		end
+	end
+
+	function skill_gain(name, line, wildcards)
+		if (sList[tonumber(wildcards[1])] ~= nil) then
+			DebugNote("* skill_gain - updating sn:" .. wildcards[1].. " to " .. wildcards[2] .."%")
+			sList[tonumber(wildcards[1])].percent = tonumber(wildcards[2])
+		end
+	end
+
+	--1         At login screen, no player yet
+	--2         Player at MOTD or other login sequence
+	--3         Player fully active and able to receive MUD commands
+	--4         Player AFK
+	--5         Player in note
+	--6         Player in Building/Edit mode
+	--7         Player at paged output prompt
+	--8         Player in combat
+	--9         Player sleeping
+	--11        Player resting or sitting
+	--12        Player running
+
+	function OnPluginBroadcast (msg, id, name, text)
+
+		if (currentState == -1) then
+			currentState = 0 -- sent request
+			Send_GMCP_Packet("request char")
+		end
+
+		-- Look for GMCP handler.
+		if (id == '3e7dedbe37e44942dd46d264') then
+
+			if (text == "char.status") then
+
+				res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","char")
+				luastmt = "gmcpdata = " .. gmcparg
+				assert (loadstring (luastmt or "")) ()
+				currentState = tonumber(gmcpval("status.state"))
+				DebugNote("char.status.state : " ..currentState)
+
+				BuildSkillz()
+
+				cast_queue()
+
+			end
+		end
+	end
+
+
+	function BuildSkillz()
+		if (sList == -1) then
+			if (currentState == 3) then
+				DebugNote("BuildSkillz...")
+								--ensure tags are enabled
+				DebugNote("Setting spell/skill tags.")
+				SendPkt (string.char (IAC, SB, TELOPT, GLOBAL_TAG_MUTE, 2, IAC, SE))
+				SendPkt (string.char (IAC, SB, TELOPT, SPELLUPS, 1, IAC, SE))
+				SendPkt (string.char (IAC, SB, TELOPT, SKILLGAINS, 1, IAC, SE))
+				Send_GMCP_Packet("request char")
+
+				SendSlistCommand()
+			end
+		end
+	end
+
+	function OnPluginInstall ()
+		DebugNote("OnPluginInstall")
+		if (currentState == -1) then
+			currentState = 0 -- sent request
+			Send_GMCP_Packet("request char")
+		end
+	end
+
+--	function OnPluginTelnetOption (option)
+--		--DebugNote("OnPluginTelnetOption")
+--		if option == string.char (100,3) then -- Player fully active and able to receive MUD commands
+--			DebugNote("OnPluginTelnetOption - 100,3")
+--			currentState = 3
+--			BuildSkillz()
+--		end
+--	end
+
+	function OnPluginSaveState()
+
+		SetVariable("SpellupDebug", spellupDebug)
+		PrintNoAuto()
+		SetVariable("NoAutoList", serialize.save_simple(noAutoList))
+		SetVariable("SpellupV2ClanSkill", USER_v2_clan_sn)
+
+	end
+
+	function PrintNoAuto()
+		ColourNote("darkorange", "", "no-auto spells:")
+		local text = ""
+		for key, value in pairs(noAutoList) do
+			text = text .. key .. " "
+		end
+
+		Note(text)
+		return text
+	end
+	
+	function SetAuto(name, line, wildcards)
+		if (wildcards[1] == "clear") then
+			noAutoList = {}
+			OnPluginSaveState()
+			Note("NoAuto list cleared")
+			return
+		elseif (wildcards[1] == "") then
+			PrintNoAuto()
+			return
+		end
+
+		local sn = tonumber(wildcards[1])
+		
+		if (sn == nil) then
+			ColourNote("Red", "", "Use the spell/skill number instead of name please.")
+			return
+		end
+		
+		local index = table.find(sn, noAutoList)
+		DebugNote(sn .. " found at " .. tostring(index))
+		if (index ~= nil) then
+			--remove
+			DebugNote("Removing " .. tostring(sn))
+			noAutoList[sn] = nil
+			ColourNote("darkorange", "", "Removing " .. sn .. " noAuto - ")
+			PrintNoAuto()			
+		else
+			--add
+			DebugNote("Adding " .. tostring(sn))
+			noAutoList[sn] = sn
+			ColourNote("darkorange", "", "Adding " .. sn .. " noAuto - ")
+			PrintNoAuto()
+		end
+	end
+
+	function DisableSpellup(name, line, wildcards)
+
+	  spellupDisabled = (spellupDisabled + 1) % 2 -- toggle value
+	  local msg = "Re-Enabled"
+	  if spellupDisabled == 1 then
+		msg = "Temporarily Disabled"
+	  end
+	  ColourNote ("darkorange", "", "Spellup: " .. msg)
+	end
+
+	function SendSlistCommand()
+		if (slistCommandSent == false) then
+			slistCommandSent = true
+			EnableTrigger("SListStart", true)
+			SendNoEcho("slist")
+		end
+	end
+
+	function SetClanSn(name, line, wildcards)
+
+		newval = tonumber(wildcards[1])
+
+		USER_v2_clan_sn = newval
+		
+		SetVariable("SpellupV2ClanSkill", USER_v2_clan_sn)
+
+		ColourNote ("darkorange", "", "Clan Skill set to : " .. USER_v2_clan_sn)
+
+		slistCommandSent = false
+		SendSlistCommand()
+	end
+
+	function ReIndexSkills(name, line, wildcards)
+		Note("Reloading Spellup Plugin...")
+		slistCommandSent = false
+		SendSlistCommand()
+	end
+
+	function do_vis(name, line, wildcards)
+		Note("Going visible...")
+		EnableAlias("ali_do_vis", false)
+		
+		-- is it already disabled?
+		local value = spellupDisabled
+		if (value == 0) then
+			spellupDisabled = 1
+		end
+		
+		Execute("vis")
+		EnableAlias("ali_do_vis", true)
+		
+		if (value == 0) then
+			DoAfterSpecial(1, "disablespellup", 10) -- execute
+		end
+	end
+
+----- spellupDebug -----
+
+function SetDebug(name, line, wildcards)
+
+	local msg = "off"
+	if (spellupDebug == 0) then
+		spellupDebug = 1
+		msg = "on"
+	else
+		spellupDebug = 0
+		msg = "off"
+	end
+
+	SetVariable("SpellupDebug", spellupDebug)
+	ColourNote ("darkorange", "", "SpellupDebug: " .. msg)
+	
+end
+
+function DebugNote(text)
+	if (spellupDebug == 1) then
+		Note("Spellup ~ " .. text)
+	end
+end
+
+-------------- UTILS ------------------
+function split(line, delim)
+
+	-- sanitize for nil
+	line = line or ""
+
+	local result = {}
+	local index = 1
+
+	for token in string.gmatch(line, delim) do
+		result[index] = token
+		index = index + 1
+	end
+
+	return result
+end
+
+-- returns index of item with matching value
+function table.find(val, tbl) 
+	tbl = tbl or {}
+	if (tbl[val] ~= nil) then
+		return tbl[val]
+	end
+	return nil
+end
+
+-------------- INSTALL MESSAGE ------------------
+
+function InstallMessage()
+	ColourNote("Chocolate", "", "+=======================================================+")
+	ColourNote("Chocolate", "", "+ Spellup Installed - type 'spellup help' for options   +")
+	ColourNote("Chocolate", "", "+=======================================================+")
+	
+	-- init
+	DebugNote("init - NoAutoList : " .. (GetVariable("NoAutoList") or "{}"))
+	-- load serialize.save_simple data
+	luastmt = "gNoAutoList = " .. (GetVariable("NoAutoList") or "{}")
+	assert (loadstring (luastmt or "")) ()
+	
+	noAutoList = gNoAutoList
+	
+end
+InstallMessage()
+
+]]>
+
+
+</script>
+
+</muclient>
+
+<!-- BUGS
+
+
+> Can check slist when sleeping
+
+> default noAutos - noauto 54 503 504 416 106 306 58
+
+-->

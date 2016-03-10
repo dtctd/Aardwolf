@@ -1,0 +1,178 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+   name="DTCTD_Auto_Prac"
+   author="DTCTD"
+   id="866e9a84bdc77948566fc95d"
+   language="Lua"
+   purpose="Casts spellup spells and cancels spells at each tick"
+   date_written="2016-10-03"
+   requires="4.00"
+   version="1.0"
+   save_state="y"
+   >
+<description trim="y">
+<![CDATA[
+Install this plugin to automatically practice spellup spells on each tick
+You must have cancellation or negation for full usefulness. Will default
+to cancel
+
+autoprac                    --> Displays the current values of variables
+
+autoprac percent #          --> Sets what percent a spell must be in order to be autopracticed
+
+autoprac spell cancel/negat --> Changes which spell is used to remove spellups between ticks
+
+autoprac on/off             --> Turns the actions of the plugin on or off
+]]>
+</description>
+
+</plugin>
+
+<!--  configure quaffing limits -->
+
+
+<aliases>
+
+  <alias
+   name="autoprac"
+   script="autoprac_settings"
+   match="^autoprac ?(percent|spell|on|off|help)?( [a-z0-9]+)?"
+   enabled="y"
+   regexp="y"
+   ignore_case="y"
+   sequence="100"
+  >
+  </alias>
+   
+</aliases>
+
+<triggers>
+	<trigger
+	enabled="y"
+	match="No spells found."
+	name="NothingLeft"
+	send_to="12"
+	sequence="100"
+	>
+	<send>
+	autoprac_enable = "no"
+	ColourNote ("yellow", "", "Autoprac plugin disabled. Nothing left to prac.")
+	</send>
+	</trigger>
+</triggers>
+
+<script>
+<![CDATA[
+
+require "checkplugin"
+
+function OnPluginBroadcast (msg, id, name, text)
+	if id == "3e7dedbe37e44942dd46d264" and text == "comm.tick" then
+		do_autoprac ()
+	end -- Aard ticked
+end
+
+
+function do_autoprac ()
+	if autoprac_enable == "yes" then
+		Send ("stand")
+		Send ("spellup 1 201 " .. autoprac_percent_lower .. " 99")
+		Send ("c " .. autoprac_canc_spell)
+		Send ("spells 1 201 " .. autoprac_percent_lower .. " 99")
+		Send ("sleep")
+	end
+end -- do_autoprac
+
+
+function autoprac_settings (name, line, wildcards)
+	if wildcards[1] == false then
+		autoprac_tellme ()
+	elseif wildcards[1] == "on" then
+		autoprac_enable = "yes"
+			ColourNote ("yellow", "", "autoprac plugin enabled.")
+	elseif wildcards[1] == "off" then
+		autoprac_enable = "no"
+			ColourNote ("yellow", "", "autoprac plugin disabled.")
+	elseif wildcards[1] == "help" then
+			autoprac_help ()
+	else
+		if wildcards[2] == false then
+			ColourNote ("yellow", "", "You need to provide a value.")
+		else
+			if wildcards[1] == "spell" then
+				autoprac_canc_spell = wildcards[2]
+				ColourNote ("yellow", "", "Spellup removal spell just set to " .. autoprac_canc_spell .. ".")
+			elseif wildcards[1] == "percent" then
+				if tonumber (wildcards[2]) > 99 then
+					ColourNote ("yellow", "", "Try a smaller value.")
+				elseif tonumber (wildcards[2]) < 2 then
+					ColourNote ("yellow", "", "I don't really recommend autopracticing from 1%.")
+				else
+					autoprac_percent_lower = tonumber (wildcards[2])
+					ColourNote ("yellow", "", "We just set autoprac_percent_lower to " .. autoprac_percent_lower .. ".")
+				end
+			else
+				autoprac_help ()
+			end
+		end
+	end
+end -- autoprac_settings
+
+function autoprac_tellme (name, line, wildcards)
+	ColourNote ("yellow", "", "autoprac_percent_lower is currently " .. autoprac_percent_lower)
+	ColourNote ("yellow", "", "autoprac_canc_spell is currently " .. autoprac_canc_spell)
+	ColourNote ("yellow", "", "autoprac_enable is currently " .. autoprac_enable)
+end
+
+function autoprac_help (name, line, wildcards)
+  ColourNote ("teal", "", world.GetPluginInfo (world.GetPluginID (), 3))
+  return true -- done  
+end -- autoprac_help
+
+function OnPluginInstall ()
+
+  if GetVariable ("enabled") == "false" then
+    ColourNote ("yellow", "", "Warning: Plugin " .. GetPluginName ().. " is currently disabled.")
+    check (EnablePlugin(GetPluginID (), false))
+    return
+  end -- they didn't enable us last time
+  
+  OnPluginEnable ()  -- do initialization stuff
+  
+end -- OnPluginInstall
+
+function OnPluginEnable ()
+
+  checkplugin ("3e7dedbe37e44942dd46d264", "aard_GMCP_handler.xml")
+
+	if GetVariable ("autoprac_percent_lower") == nil then 
+		SetVariable ("autoprac_percent_lower", tonumber(75))
+	end
+	autoprac_percent_lower = GetVariable ("autoprac_percent_lower")
+
+	if GetVariable ("autoprac_canc_spell") == nil then 
+		SetVariable ("autoprac_canc_spell", "canc")
+	end
+	autoprac_canc_spell = GetVariable ("autoprac_canc_spell")
+
+	if GetVariable ("autoprac_enable") == nil then 
+		SetVariable ("autoprac_enable", "yes")
+	end
+	autoprac_enable = GetVariable ("autoprac_enable")
+	
+end -- OnPluginEnable
+
+function OnPluginSaveState ()
+  SetVariable ("enabled", tostring (GetPluginInfo (GetPluginID (), 17)))
+  SetVariable ("autoprac_percent_lower", autoprac_percent_lower)
+  SetVariable ("autoprac_canc_spell", autoprac_canc_spell)
+  SetVariable ("autoprac_enable", autoprac_enable)
+end -- OnPluginSaveState
+
+]]>
+</script>
+
+</muclient>

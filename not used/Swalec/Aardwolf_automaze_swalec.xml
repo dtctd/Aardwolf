@@ -1,0 +1,542 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<!-- Saved on Thursday, October 30, 2008, 7:39 PM -->
+<!-- MuClient version 4.33 -->
+
+<muclient>
+<plugin
+   name="Aardwolf_automaze_swalec"
+   id="20c24130ab326dc05b49420d"
+   language="Lua"
+   purpose="Navigates through mazes in Aardwolf"
+   save_state = "y" 
+   author = "swalec"
+   date_written="2008-11-17 18:07:12"
+   requires="4.33"
+   version="1.0"
+   >
+
+<!--
+Copyright (c) 2008 Swalec
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+-->
+
+<description trim="y">
+
+An automaze traveral plugin for Aardwolf. Each maze needs to be configured,
+but this is straight-forward and happens in-game. Once, this has been done
+mazes will be navigated quickly and automatic. Conditions like a fight,
+quicksand or so on, cause navigation to pause; this will also happen after a
+set number of moves.
+
+It works by defining rooms as either requiring movement in a random direction,
+in a specific direction and end rooms. Once defined these settings with be
+remembered. 
+
+Limitations: currently, this won't work when the way out is recognised by
+objects or characters in the room. This will come in version 2. There is a bug
+in serialize.lua; you will need to edit it to remove the extra, unnecessary
+assert. See http://www.gammon.com.au/forum/bbshowpost.php?id=8924.
+
+
+Navigation commands are:
+
+automaze new -- define a new maze. Normally this is used in the first room
+that you enter.
+
+automaze random -- move in a random direction, when in this room. 
+
+automaze [neswud] -- move in the given direction. This is useful if you move
+randomly move out of the entry to a room
+
+automaze complete -- state that the room is the end of the maze
+
+automaze -- having recognised that you are in a maze, navigate through it.
+This command can be used on entering a maze, or to recover from a pause. 
+
+
+More rarely used commands are:
+
+automaze clear -- delete all the configuration for the current maze. 
+
+automaze clearall -- delete the configuration for all mazes. 
+
+Developer commands
+
+automaze dump -- print the configuration for the current maze. 
+
+automaze dumpall -- print the configuration for all mazes
+
+
+License:
+
+Copyright 2008 Swalec
+
+This plugin is released under the MIT license.
+
+
+
+
+</description>
+
+</plugin>
+
+
+<!--  Get our standard constants -->
+
+<include name="constants.lua"/>
+<aliases>
+  <alias
+   script="OnHelp"
+   match="Aardwolf_automaze_swalec:help"
+   enabled="y"
+  >
+  </alias>
+
+  <alias 
+      match = "automaze"
+      enabled = "y"
+      script = "automaze"
+      >
+  </alias>
+
+  <alias 
+      match = "automaze new"
+      enabled = "y"
+      script = "automaze_new"
+      >
+  </alias>
+
+
+  <alias 
+      match = "automaze [neswud]$"
+      regexp = "y"
+      enabled = "y"
+      script = "automaze_direction"
+      >
+  </alias>
+
+
+  
+  <alias 
+      match = "automaze random"
+      enabled = "y"
+      script = "automaze_random"
+      >
+  </alias>
+  
+
+  <alias 
+      match = "automaze complete"
+      enabled = "y"
+      script = "automaze_complete"
+      >
+  </alias>
+
+  
+  <alias 
+      match = "automaze dumpall"
+      enabled = "y"
+      script = "automaze_dumpall"
+      >
+  </alias>
+
+  <alias 
+      match = "automaze dump"
+      enabled = "y"
+      script = "automaze_dump"
+      >
+  </alias>
+
+  <alias 
+      match = "automaze clear"
+      enabled = "y"
+      script = "automaze_clear"
+      >
+  </alias>
+
+  <alias 
+      match = "automaze clearall"
+      enabled = "y"
+      script = "automaze_clear_all"
+      >
+  </alias>
+  
+  <alias 
+      match = "automaze help"
+      enabled = "y"
+      script = "OnHelp"
+      >
+  </alias>
+
+
+
+</aliases>
+
+<!--  Plugin help  -->
+<script>
+<![CDATA[
+function OnHelp ()
+  world.Note (world.GetPluginInfo (world.GetPluginID (), 3))
+end
+]]>
+</script> 
+
+
+
+
+<script>
+<![CDATA[
+
+
+
+
+
+
+
+
+require "checkplugin"
+require "var"
+require "serialize"
+
+--
+-- state 
+--
+
+-- this is the main config variable -- it is the only state that is stored. 
+automaze_config_cache = nil
+
+
+local automaze_active = false
+local automaze_current_maze = nil
+
+local current_exits = {}
+local lastroom = ""
+local no_iterations = 0
+local total_iterations = 0
+
+function automaze( name, line, wildcards )
+   if( automaze_current_maze ) then 
+      automaze_active = true
+      no_iterations = 0
+      automaze_iterate()
+   else 
+      aprint( "No maze currently active")
+   end
+end
+
+function automaze_direction( name, line, wildcards )
+   direction = line:sub( -1 )
+   automaze_room_direction( direction )
+end
+
+function automaze_random( name, line, wildcards )
+   automaze_room_is_random()
+end
+
+function automaze_complete( name, line, wildcards )
+   automaze_room_complete()
+end
+
+function automaze_clear_all( name, line, wildcards )
+   aprint ("Clearing all config")
+   -- access this var directly here, because we have no other way to clear it.
+   automaze_config_cache = {}
+end
+
+function automaze_clear( name, line, wildcards )
+   if( automaze_current_maze ) then 
+      aprint ("Clearing current maze")
+      
+      local automaze_config = get_automaze_config()
+      
+      automaze_config[ automaze_current_maze[ "maze name" ] ] = nil
+      automaze_current_maze = nil
+      automaze_active = false
+   else
+      aprint( "No current maze" )
+   end
+end
+
+function automaze_dumpall( name, line, wildcards )
+   aprint( "Dump All" )
+   
+   print( serialize.save( "automaze_config_cache", get_automaze_config() ) )
+   aprint( "Complete" )
+end
+
+function automaze_dump( name, line, wildcards )
+   if( automaze_current_maze ) then 
+      aprint( "Dump" )
+      print( serialize.save( "automaze_current_maze", automaze_current_maze ) )
+      aprint( "Dump Complete" )
+   else
+      aprint( "No activate maze to dump" )
+   end
+end 
+
+
+function automaze_new( name, line, wildcards )
+   automaze_define_new_maze( lastroom )
+end
+
+function automaze_define_new_maze( mazename )
+   local automaze_config = get_automaze_config()
+   if ( automaze_config[ lastroom ] ) then
+      aprint ("Maze already exists in ", lastroom )
+      return
+   end
+   
+   local newmaze = {}
+   newmaze["maze name"] = mazename
+   
+   automaze_config[ lastroom ] = newmaze
+   
+   aprint ( "new maze created" )
+   automaze_set_active_maze()
+end
+
+function automaze_set_active_maze()
+   local automaze_config = get_automaze_config()
+   -- don't bother if this maze is already active
+   if( automaze_current_maze and  
+       automaze_config[ lastroom ][ "maze name" ]
+       == automaze_current_maze[ "maze name" ] ) then
+      return
+   end
+   automaze_current_maze = automaze_config[ lastroom ]
+   aprint ( "activating maze ", 
+            automaze_current_maze[ "maze name" ] )
+end
+
+function automaze_check_active_room_marked()
+   
+   if( not automaze_current_maze ) then
+      aprint( "No current maze active" )
+      return false
+   end
+   
+   local roommark = automaze_current_maze[ lastroom ];
+   if( roommark ) then
+      aprint( "room is already marked as: ", roommark )
+      return false
+   end 
+   return true
+end
+
+function automaze_room_is_random()
+   
+   if( not automaze_check_active_room_marked() ) then
+      return
+   end
+   
+   automaze_current_maze[ lastroom ] = "random"
+   aprint( "room marked random" )
+   automaze()
+end
+
+function automaze_room_direction( direction )
+   
+   if( not automaze_check_active_room_marked() ) then 
+      return
+   end
+   
+   automaze_current_maze[ lastroom ] = direction
+   aprint( "room marked ", direction )
+   automaze()
+ end
+
+function automaze_room_complete()
+   
+   if( not automaze_check_active_room_marked() ) then 
+      return
+   end
+   
+   automaze_current_maze[ lastroom ] = "complete"
+   aprint( "room marked complete" )
+   automaze()
+end
+
+function automaze_iterate()
+   
+   if( not automaze_current_maze ) then
+      aprint( "No maze currently active" )
+   end
+   
+   -- check for completion
+   local mark = automaze_current_maze[ lastroom ]
+   if( mark == "complete" ) then
+      aprint( "complete in ", total_iterations, " steps" )
+      total_iterations = 0
+      automaze_current_maze = nil
+      automaze_active = false
+      return
+   end
+   total_iterations = total_iterations + 1
+   
+   -- prevent excessive looping in case of disaster
+   local max_moves = 50
+   if( no_iterations + 1 > max_moves ) then
+      aprint( "Pausing after ", max_moves, " moves" )
+      automaze_pause()
+      return
+   end
+   no_iterations = no_iterations + 1
+   
+   -- move in appopriate direction
+   if( mark == "random" ) then
+      automaze_move_random()
+      return
+   end
+   
+   if( mark == nil ) then
+      aprint ("unmarked room" )
+      automaze_pause()
+      return
+   end
+
+   aprint( "defined move ", no_iterations, " in direction ", direction )
+   automaze_move( mark )
+end
+
+function automaze_move_random()
+   local exit_array = {}
+   for k,_ in pairs( current_exits )
+   do
+      table.insert( exit_array, k )
+   end
+   direction = exit_array[ math.random ( #exit_array ) ]
+   
+   aprint ( "random move ", no_iterations, " in direction ",  direction )
+   automaze_move( direction )
+end
+
+function automaze_move( direction )
+   if( current_exits[ direction ] == 2) then
+      Send( "open " .. direction )
+   end
+   Send( direction )
+end
+
+function automaze_pause()
+   aprint( "pausing" )
+   automaze_active = false
+end
+
+function room_change()
+   local automaze_config = get_automaze_config()
+   local var = GetPluginVariableList(  "18c24130ab326dc05b49420d" )
+   lastroom = var.roomname      
+   if( automaze_config[ lastroom ] and not automaze_active ) then
+      automaze_set_active_maze()
+   end
+end
+
+
+
+function exits_change()
+   local var = GetPluginVariableList(  "18c24130ab326dc05b49420d" )
+   -- var is serialised, so load it (which returns a function) and 
+   -- run the function
+   
+   loadstring( var.exits )()
+   current_exits = exits
+
+   if( automaze_active ) then
+      automaze_iterate()
+   end
+end
+
+function aprint(...)
+   local arg = {...}
+   
+   local print = ""
+   for _,v in pairs( arg ) do
+      print = print .. v
+   end
+   ColourNote( "white", "green", "Automaze: " .. print )
+end
+
+function OnPluginBroadcast( msg, id, name, text )
+   if ( id == "18c24130ab326dc05b49420d" ) then
+      
+      if ( msg == 2 ) then
+         exits_change()
+      end
+      if ( msg == 1 ) then
+         room_change()
+      end
+      
+      -- Can't move
+      if ( msg == 3 ) then
+         if( automaze_active ) then
+            automaze_pause()
+         end
+      end
+   end
+   
+   
+   -- fighting
+   if ( id == "8a710e0783b431c06d61a54c" ) then
+      local stats =  GetPluginVariableList ("8a710e0783b431c06d61a54c")
+      if( stats.fighting == "y" ) then
+         if ( automaze_active ) then 
+            automaze_pause()
+         end
+      end
+   end
+
+   
+end
+
+
+function get_automaze_config()
+   return automaze_config_cache
+end
+
+function OnPluginSaveState()
+   -- save state, by dumping into mushclient var which then serialize it.
+   var.automaze_config = serialize.save( "automaze_config_cache",
+                                         get_automaze_config()  )
+end
+
+function OnPluginInstall()
+   checkplugin( "18c24130ab326dc05b49420d", "Aardwolf_exits_detector.xml" )
+   checkplugin( "8a710e0783b431c06d61a54c", "Stats_Detector.xml" )
+   
+   OnHelp()
+   
+   if( var.automaze_config ) then
+      loadstring( var.automaze_config )()
+      automaze_dumpall()
+   else
+      automaze_config_cache = {}
+   end
+
+
+end 
+
+function OnHelp ()
+   world.Note (world.GetPluginInfo (world.GetPluginID (), 3))
+end
+]]>
+</script>
+</muclient>

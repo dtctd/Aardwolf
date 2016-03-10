@@ -1,0 +1,409 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+   name="DTCTD_Quest_Status_1_1"
+   author="DTCTD"
+   id="e50b1d08a0cfc0ee9c442000"
+   language="Lua"
+   purpose="The current quest info is shown on the status bar."
+   date_written="2016-10-03 12:00:00"
+   requires="4.31"
+   version="1.1"
+   save_state="y"
+   >
+
+</plugin>
+
+<aliases>
+
+	<alias
+	   script="SetDebug"
+	   match="^questDebug (.*)?$"
+	   enabled="y"
+	   regexp="y"
+	   sequence="100"
+	   ignore_case="y"
+	  >
+	 </alias>
+
+	<alias
+	   script="SetShowStatus"
+	   match="^showStatus (.*)?$"
+	   enabled="y"
+	   regexp="y"
+	   sequence="100"
+	   ignore_case="y"
+	  >
+	 </alias>
+
+	<alias
+	   script="SetShowInfo"
+	   match="^showInfo (.*)?$"
+	   enabled="y"
+	   regexp="y"
+	   sequence="100"
+	   ignore_case="y"
+	  >
+	 </alias>
+
+</aliases>
+
+<triggers>
+
+	<trigger
+		name="quest_trigger"
+		enabled="y"
+		match="^(?:.+ tells you \'Thank you\, brave .+\!\'|.+ tells you \'Aardwolf\'s most heinous criminal\, .+\,\'|.+ tells you \'has escaped from the dungeon\!\'|.+ tells you \'Since the escape\, .+ has murdered \'|.+ tells you \'.+ civilians\! The penalty for this crime is death\, and\'|.+ tells you \'you are to deliver the sentence\!\'|.+ tells you \'An enemy of mine\, .+\, is making vile\'|.+ tells you \'threats against .+\! This threat must be eliminated\!\'|.+ tells you \'Seek .+ out somewhere in the vicinity\'|.+ tells you \'of .+ which is in the general area\'|.+ tells you \'of .+\.\'|.+ tells you \'Good luck .+\. Return safely\!\')$"
+		regexp="y"
+		omit_from_output="y"
+		sequence="100">
+	</trigger>
+
+	<trigger
+		name="cp_mob_killed_trigger"
+		script="HandleCampaign"
+		enabled="y"
+		expand_variables="y"
+		group="Quest"
+		match="^Congratulations\, that was one of your CAMPAIGN mobs\!|Commander Barcett tells you \'Good luck in your campaign\!\'$"
+		regexp="y"
+		sequence="100"
+	>
+	</trigger>
+
+
+	<trigger
+		name="cp_match_trigger"
+		group="QuestStatusCampaign"
+		script="CampaignMatch"
+		enabled="y"
+		match="^You still have to kill \* (?<mob>[^\(]+) \((?<where>.+?)(?<isdead> - Dead)?\)\.?$"
+		regexp="y"
+		sequence="100">
+	</trigger>
+
+	<trigger
+		name="cp_match_end_trigger"
+		group="QuestStatusCampaign"
+		script="CampaignMatchEnd"
+		enabled="n"
+		match="^You have .+ left to finish this campaign\.$"
+		regexp="y"
+		sequence="100">
+	</trigger>
+
+	<trigger
+		name="cp_no_match_trigger"
+		group="QuestStatusCampaign"
+		script="CampaignNoMatch"
+		enabled="y"
+		match="^Campaign cleared\.|You are not currently on a campaign\.$"
+		regexp="y"
+		sequence="100">
+	</trigger>
+
+	<trigger
+		name="cp_flotsam_trigger"
+		group="QuestStatusCampaign"
+		enabled="y"
+		match="^You are not currently on a campaign\.|Note\: Dead means that the target is dead\, not that you have killed it\.$"
+		regexp="y"
+		sequence="100">
+	</trigger>
+</triggers>
+
+<script>
+<![CDATA[
+
+require "gmcphelper"
+
+-- pull in telnet option handling
+dofile (GetPluginInfo (GetPluginID (), 20) .. "telnet_options.lua")
+
+local debug = tonumber(GetVariable("QuestStatusDebug")) or 0
+
+local initialized = false
+local lastQuest = ""
+local questText = ""
+local campaignText = ""
+local showStatus = tonumber(GetVariable("ShowQuestInStatus")) or 1
+local showInfo = tonumber(GetVariable("ShowQuestInInfo")) or 1
+local refresh = false
+local currentRoom
+local cpIndex = 1
+
+function OnPluginBroadcast (msg, id, name, text)
+
+	-- Look for GMCP handler.
+	if (id == '3e7dedbe37e44942dd46d264') then
+
+		if (text == "comm.quest") then
+
+			DebugNote("HandleCampaign - comm.quest")
+
+			res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","comm")
+			luastmt = "gmcpdata = " .. gmcparg
+			assert (loadstring (luastmt or "")) ()
+			local action = gmcpval("quest.action")
+
+			if (action == "status" and gmcpval("quest.wait") ~= "") then
+				questText = "Waiting to quest"
+				WriteInfo(questText)
+				WriteStatus(questText)
+				HandleCampaign()
+				lastQuest = ""
+				refresh = false
+				DebugNote(questText)
+			elseif (action == "ready" or (action == "status" and gmcpval("quest.status") == "ready")) then
+				questText = "Ready to quest!"
+				WriteInfo(questText)
+				WriteStatus(questText)
+				lastQuest = ""
+				refresh = false
+				DebugNote(questText)
+			elseif (action == "start" or (action == "status" and gmcpval("quest.timer") ~= "")) then
+				-- on a quest!
+				if (gmcpval("quest.room") == "") then
+					local noMob = "You cannot see your quest mob, it may be dead"
+					Note(noMob)
+					WriteInfo(noMob)
+					WriteStatus(noMob)
+					return
+				end
+
+				local deadText = ""
+				if (gmcpval("quest.targ") == missing) then
+					deadText = " (Missing)"
+				else
+					local cleanRoom = string.gsub(gmcpval("quest.room"), "@[a-zA-Z]", "") -- clean out color codes
+					questText = gmcpval("quest.targ") .. " in " .. cleanRoom .. " at " .. gmcpval("quest.area") .. " in " .. gmcpval("quest.timer") .. " minutes"
+					startQuest(gmcpval("quest.targ"), cleanRoom, gmcpval("quest.area"), questText)
+				end
+				WriteInfo(questText .. deadText)
+				WriteStatus(questText .. deadText)
+				refresh = true
+				DebugNote(questText .. deadText)
+			elseif (action == "killed"  or (action == "status" and gmcpval("quest.target") == "killed")) then
+				questText = "Your quest is almost complete! Return to a quest master!"
+				WriteInfo(questText)
+				WriteStatus(questText)
+				refresh = false
+				DebugNote(questText)
+			elseif (action == "comp" or action == "fail") then
+				questText = ""
+				WriteInfo("")
+				WriteStatus(questText)
+				lastQuest = ""
+				refresh = false
+				Execute("sendgmcp request quest")
+				DebugNote(questText)
+			end
+
+		elseif (text == "char.status" and initialized == false) then
+
+			res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","char")
+			luastmt = "gmcpdata = " .. gmcparg
+			assert (loadstring (luastmt or "")) ()
+			currentState = tonumber(gmcpval("status.state"))
+			DebugNote("char.status.state : " .. currentState)
+
+			if (currentState == 3) then
+				DebugNote("initializing...")
+				initialized = true
+				Execute("sendgmcp request quest")
+			end
+		elseif (text == "room.info") then
+			res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","room.info")
+
+			luastmt = "gmcpdata = " .. gmcparg
+			assert (loadstring (luastmt or "")) ()
+
+			currentRoom = {
+				uid = gmcpval("num"),
+				area = gmcpval("zone")
+			}
+		end
+	end
+end
+
+function startQuest(mob, room, area, text)
+
+	local cleanRoom = string.gsub(room, "@[a-zA-Z]", "")
+
+	local pattern = mob .. "|" .. cleanRoom .. "|" .. area
+
+	if (lastQuest == pattern) then
+		-- duplicate request from multi-line regex match
+		return
+	end
+	lastQuest = pattern
+
+	Note("Quest: Kill " .. text)
+
+--	if (currentRoom ~= nil) then
+--		Execute("xmapper area " .. cleanRoom .. "|" .. area)
+--	end
+end
+
+function HandleCampaign()
+	cpIndex = 1
+	DebugNote("HandleCampaign")
+	SetTriggerOption("cp_match_trigger", "omit_from_output", "y")
+	SetTriggerOption("cp_match_end_trigger", "omit_from_output", "y")
+	SetTriggerOption("cp_no_match_trigger", "omit_from_output", "y")
+	SetTriggerOption("cp_flotsam_trigger", "omit_from_output", "y")
+	Execute("campaign check")
+	campaignText = ""
+end
+
+function CampaignMatch(name, line, wildcards)
+	DebugNote(wildcards.mob .. " " .. wildcards.where .. " " .. wildcards.isdead)
+
+	EnableTrigger("cp_match_end_trigger", true)
+
+	campaignText = campaignText .. " (" .. cpIndex .. ") " .. wildcards.mob .. " in " .. wildcards.where
+	cpIndex = cpIndex + 1
+end
+
+function CampaignMatchEnd(name, line, wildcards)
+	DebugNote("CampaignMatchEnd")
+
+	EnableTrigger("cp_match_end_trigger", false)
+
+
+	SetTriggerOption("cp_match_trigger", "omit_from_output", "n")
+	SetTriggerOption("cp_match_end_trigger", "omit_from_output", "n")
+	SetTriggerOption("cp_no_match_trigger", "omit_from_output", "n")
+	SetTriggerOption("cp_flotsam_trigger", "omit_from_output", "n")
+
+	cpIndex = 1
+
+	local formattedText
+	if (campaignText == "") then
+		formattedText = ""
+	else
+		formattedText = " - " .. campaignText .. "]"
+		campaignText = ""
+	end
+
+    DebugNote(formattedText)
+	if (questText == "Waiting to quest") then
+		DebugNote("Updating Message...")
+		WriteInfo(questText .. formattedText)
+		WriteStatus(questText .. formattedText)
+	end
+end
+
+function CampaignNoMatch(name, line, wildcards)
+	DebugNote("CampaignNoMatch")
+
+	cpIndex = 1
+	campaignText = ""
+	CampaignMatchEnd(name, line, wildcards)
+end
+
+
+function SetShowStatus(name, line, wildcards)
+
+  newval = tonumber(wildcards[1])
+  if not newval or newval > 1 or newval < 0 then
+    ColourNote("darkorange", "", "SetShowStatus valid values are: 0 - off, 1 - on")
+    return
+  end
+
+  showStatus = newval
+  local msg = "off"
+  if showStatus == 1 then
+    msg = "on"
+    Execute("sendgmcp request quest")
+  else
+    SetStatus("")
+  end
+  ColourNote ("darkorange", "", "SetShowStatus: " .. msg)
+end
+
+function SetShowInfo(name, line, wildcards)
+
+  newval = tonumber(wildcards[1])
+  if not newval or newval > 1 or newval < 0 then
+    ColourNote("darkorange", "", "SetShowInfo valid values are: 0 - off, 1 - on")
+    return
+  end
+
+  showInfo = newval
+  local msg = "off"
+  if showInfo == 1 then
+    msg = "on"
+    Execute("sendgmcp request quest")
+  else
+  	InfoClear()
+  end
+  ColourNote ("darkorange", "", "SetShowInfo: " .. msg)
+end
+
+function WriteStatus(text)
+	if (showStatus == 1) then
+		SetStatus(text)
+	end
+end
+
+function WriteInfo(text)
+	if (showInfo == 1) then
+		InfoClear()
+		Info(text)
+	end
+end
+
+function OnPluginTelnetOption (option)
+	if option == string.char (101,1) then
+		if (refresh == true) then
+			Send_GMCP_Packet("request quest")
+		end
+	end
+end -- function
+
+function OnPluginSaveState()
+    SetVariable("ShowQuestInStatus", showStatus)
+    SetVariable("ShowQuestInInfo", showInfo)
+end
+
+function OnPluginConnect()
+    Send_GMCP_Packet("request room")
+end
+
+
+
+--------------
+
+function SetDebug(name, line, wildcards)
+
+  newval = tonumber(wildcards[1])
+  if not newval or newval > 1 or newval < 0 then
+    ColourNote("darkorange", "", "QuestStatusDebug valid values are: 0 - off, 1 - on")
+    return
+  end
+
+  debug = newval
+  local msg = "off"
+  if debug == 1 then
+    msg = "on"
+  end
+  ColourNote ("darkorange", "", "QuestStatusDebug: " .. msg)
+end
+
+function DebugNote(text)
+	if (debug == 1) then
+		Note("Quest_Status ~ " .. text)
+	end
+end
+
+
+]]>
+</script>
+
+
+
+
+</muclient>

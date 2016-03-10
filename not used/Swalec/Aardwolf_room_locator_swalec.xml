@@ -1,0 +1,559 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<!-- Saved on Thursday, October 30, 2008, 7:39 PM -->
+<!-- MuClient version 4.33 -->
+
+<muclient>
+<plugin
+   name="Aardwolf_room_locator_swalec"
+   id="28c24130ab326dc05b49420d"
+   language="Lua"
+   purpose="Remembers locations"
+   save_state = "y" 
+   author = "swalec"
+   date_written="2008-11-17 18:07:12"
+   requires="4.33"
+   version="1.0"
+   >
+
+<!--
+Copyright (c) 2008 Swalec
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
+
+-->
+
+<description trim="y">
+
+
+
+
+</description>
+
+</plugin>
+
+<aliases>
+
+  <alias
+      match = "gwhere *"
+      enabled = "y"
+      script = "gwhere"
+      />
+
+  <alias
+      match = "gjiggle *"
+      enabled = "y"
+      script = "gwhere_jiggle"
+      />
+</aliases>
+
+<triggers>
+  <trigger 
+      enabled = "y"
+      omit_from_output="y"
+      script = "updatelocation_aardh"
+      sequence = "100"
+      match = "{coords}-1"
+      />
+      
+  <trigger
+      enabled="y" 
+      omit_from_output="y"
+      regexp="y"
+      script="updatelocation"
+      sequence="50"
+      match="^\{coords\}(?&lt;zone&gt;\d+)\,(?&lt;x&gt;\d+)\,(?&lt;y&gt;\d+)$"
+      />
+
+  <trigger
+      match = "You are in area : *"
+      enabled = "y"
+      script = "location"
+      />
+
+</triggers>
+<!--  Plugin help  -->
+<script>
+<![CDATA[
+function OnHelp ()
+  world.Note (world.GetPluginInfo (world.GetPluginID (), 3))
+end
+]]>
+</script> 
+
+
+
+
+<script>
+<![CDATA[
+
+
+
+
+--
+--  Data Structures
+--
+--  area_names [ key_calculated_from_coords ] = "Area name"
+--
+--  Current ....
+--  room_names [ key_as_above ] = 
+--                 ["room name 1"] = 1
+--                 ["room name 2"] = 1
+--                 ["room name 3"] = 1
+
+-- Move to ..
+--  
+--  srun name == the last runto name that was used 
+
+--
+--  room_names [ key_as_above ] = 
+--                 ["room name 1"] =
+--                    ["srun name"] = [min,max,ave,n]         
+
+
+require "var"
+require "serialize"
+
+--
+-- map, coords to hash of names. The key is calculated from the area. 
+-- The value is another table for each area. 
+--
+room_names = {}
+
+--
+-- map coords to areas
+--
+area_names = {}
+
+--
+-- current room
+--
+local room = nil
+--
+-- current area, or nil if we have moved since
+--
+local area = nil
+--
+-- current coords
+--
+local coord = {}
+--
+-- room changes since last run
+--
+local room_changes = 0
+--
+-- last srun text
+--
+local last_srun = ""
+--
+-- are we in jiggle mode?
+-- 
+local jiggle = 0
+
+-- this function runs only when "{coords}-1" is detected, which should be
+-- specific to the aardh.
+function updatelocation_aardh (name, line, wildcards, styles)
+   coord.x = -1
+   coord.y = -1 
+   coord.zone = -1
+   
+   area = nil
+   dprint( "coords: aardh" )
+
+   record_room()
+end
+
+function updatelocation (name, line, wildcards, styles )
+   coord.x = tonumber (wildcards.x) 
+   coord.y = tonumber (wildcards.y)
+   coord.zone = tonumber (wildcards.zone)
+   
+   area = nil
+   dprint( "coords: ", coord.x, coord.y, coord.zone )
+
+   record_room()
+end 
+
+function location( name, line, wildcards )
+   area = wildcards[ 1 ]
+   dprint( "area: ", area )
+   
+   local key = coords_to_key()
+   if( not key ) then
+      dprint( "No known coord" )
+      return
+   end
+   
+   if( area_names[ key ] ) then
+      dprint( "Known area:", area_names[ key ] )
+      
+      if( not (area_names[ key ] == area) ) then 
+         print( "Room Locator Error" )
+         print( "Area mismatch. Currently in ", area, " but expected ", area_names[ key ] )
+         print( "Suggest running gwhere update_area" )
+         print( "This will delete data for current area" )
+      end
+      
+      return
+   end
+
+   dprint( "assigning area:", area )
+   area_names[ key ] = area
+end
+
+function coords_to_key()
+   if( coord.x and coord.x and coord.zone ) then    
+      return coord.x .. ":" .. coord.y .. ":" .. coord.zone
+   else 
+      return nil
+   end
+end
+
+function room_change()
+   local var = GetPluginVariableList(  "18c24130ab326dc05b49420d" )
+   room = var.roomname
+   -- kill "(G)" and (432) stuff.
+   room = string.gsub(room, "%b()", "")
+   -- count the number of times the room has changed -- technically, this will
+   -- also pick up "look" and the like. We could circumvent by only increasing
+   -- IF moves had dropped since last time.
+   room_changes = room_changes + 1
+   dprint( "Room change: ", room_changes )
+end
+
+function record_room()
+   local key = coords_to_key()
+   if( not key ) then
+      dprint( "No known coord" )
+      return
+   end
+   
+   
+   local current_names = room_names[ key ] or {}
+   room_names[ key ] = current_names 
+   
+   
+
+   -- have to call get room metadata again, because it may just have been
+   -- assigned for the first time.
+   if( get_room_metadata( key, room ) ) then
+      dprint( "Existing name:", room )
+      
+      local metadata = get_srun_metadata( 
+         get_room_metadata( key, room ), last_srun 
+      )
+      
+      -- recalc metadata
+      metadata.max = 
+         math.max( room_changes, metadata.max )
+      metadata.min = 
+         math.min( room_changes, metadata.min )
+      metadata.total = metadata.total + room_changes
+      metadata.n = metadata.n + 1
+
+      dprint( "Metadata: ", metadata.max, " ", metadata.min, " ",
+              (metadata.total/metadata.n) )
+   end
+end
+
+function get_srun_metadata( room_metadata, srun )
+   local srun_metadata = room_metadata[ srun ]
+   
+   if( not srun_metadata ) then 
+      dprint( "Assigning new metadata" )
+      local metadata = {
+         min = 1/0,
+         max = 0,
+         total = 0,
+         n = 0
+      }
+      room_metadata[ srun ] = metadata 
+   end
+
+   return room_metadata[ srun ]
+end
+
+
+function get_room_metadata( coord_key, room )
+   local current_names = room_names[ coord_key ] or {} 
+
+   -- if there is no metadata, start some new metadata
+   if( not current_names[ room ] ) then
+      dprint( "Adding new name:", room )
+      current_names[ room ] = 1
+      room_names[ coord_key ] = current_names
+   end
+
+   -- there is metadata but it's 1, which means it's old style metadata
+   -- or the metadata hasn't been used yet.
+   if( current_names[ room ] == 1 ) then
+      current_names[ room ] = {}
+   end
+
+   return current_names[ room ]
+end
+
+
+function search( room )
+   print( "Searching for:" .. room ..":" )
+   for coord_key,list in pairs( room_names ) do
+      for name,_ in pairs( list ) do 
+         if( string.find( name:upper(), room:upper() ) ) then 
+            local area = area_names[ coord_key ] or "Unknown"
+            print( "Found:", name, "at", coord_key, 
+                   "which is in", area_names[ coord_key ] )
+            
+            local room_metadata = 
+               get_room_metadata( coord_key, name )
+            
+            print_rooms( room_metadata )
+         end
+      end
+   end
+   print( "Search complete" )
+end
+
+--
+-- print rooms 
+--
+function print_rooms( room_metadata )
+   local rooms = {}
+   for srun,_ in pairs( room_metadata ) do
+      local results = {}
+      
+      results.srun = srun
+      results.stats = get_srun_metadata( room_metadata, srun ) 
+      
+      table.insert( rooms,
+                    results )
+   end
+   
+   local function ave(data)
+      return data.stats.total/data.stats.n
+   end
+   
+   table.sort( rooms, 
+               function (a, b)
+                  return ave( a ) < ave( b )
+               end )
+                         
+   
+   for i,v in pairs( rooms ) do 
+      local stats = v.stats
+      local srun = v.srun
+      print( "\t\t" .. "srun: " .. srun .. 
+             "\tave: " .. (stats.total/stats.n) ..
+             "\tmin: " .. stats.min ..
+             "\tmax: " .. stats.max .. 
+          ""
+       )
+   end
+end
+
+
+
+function gwhere( name, line, wildcards )
+   local command = wildcards[ 1 ] 
+   
+   if( command == "dump" ) then
+      print( serialize.save( "room_names", room_names ) )
+      print( serialize.save( "area_names", area_names ) )
+      return
+   end
+
+   if( command == "clear" ) then
+      print( "Clearing config" )
+      room_names = {}
+      area_names = {}
+      return
+   end
+   
+   if( command == "update_area" ) then
+      print( "Updating area name" )
+      area_names[ coords_to_key() ] = nil
+      room_names[ coords_to_key() ] = nil
+      Execute( "where" )
+   end
+
+   search( string.sub( line, 8 ) )
+end
+
+function gwhere_jiggle( name, line, wildcards )
+   jiggle = tonumber( wildcards[ 1 ] )
+   Execute( "look" )
+end
+
+local last_exit = ""
+
+local reverse_dir = { north = "south", east = "west", 
+                      south = "north", west = "east", 
+                      up = "down", down = "up" }
+
+function exits_change()
+   if( jiggle > 0 ) then 
+      
+      local var = GetPluginVariableList(  "18c24130ab326dc05b49420d" )
+      -- var is serialised, so load it (which returns a function) and 
+      -- run the function
+   
+      loadstring( var.exits )()
+      current_exits = exits
+
+      local exit_array = {}
+      for k,_ in pairs( current_exits )
+      do
+         table.insert( exit_array, k )
+      end
+      
+      -- don't go back the way we've just come -- this should 
+      -- increase the path length that a jiggle takes. 
+      -- oh dear, sometimes lua is a pain
+      local function index_of(t,value)
+         for k,v in ipairs(t) do
+            if v == value then return k end
+         end
+         return nil
+      end
+      
+      local last_exit_index = index_of( exit_array, 
+                                        reverse_dir[ last_exit ] )
+      
+      print( "last_exit", last_exit, last_exit_index )
+
+            
+      
+      if( #exit_array > 1 and last_exit_index ) then
+         print( "Removing direction", exit_array[ last_exit_index ] )
+         table.remove( exit_array, last_exit_index )
+      end
+      
+      direction = 
+         exit_array[ math.random ( #exit_array ) ]
+      
+      last_exit = direction
+      jiggle = jiggle - 1
+      print( "Room Jiggle move:", direction )
+      print( "Room Jiggle Remaining:", jiggle ) 
+      
+      if( current_exits[ direction ] == 2) then
+         Send( "open " .. direction )
+      end
+      Send( direction )
+   end
+end
+
+
+function OnPluginBroadcast( msg, id, name, text )
+   if ( id == "18c24130ab326dc05b49420d" ) then
+      if ( msg == 1 ) then
+         room_change()
+      end
+
+      if( msg == 2 ) then 
+         exits_change()
+      end
+
+      if( msg == 3 ) then
+         jiggle = 0
+      end
+   end
+
+   -- ending an srun
+   if ( id == "24c24132ab326dc05b4942ed" and 
+        msg == 1 ) then 
+      -- print( "Location for srun:" .. text .. ":" )
+      room_changes = 0
+      last_srun = text
+      -- print( "***RESETTING SRUN TO ", text )
+
+      local key = coords_to_key()
+      if( not area_names[ key ] ) then 
+         Execute( "where" )
+      end
+   end
+
+   -- starting an srun, so don't remember the last one cause it's probably
+   -- wrong.
+   if ( id == "24c24132ab326dc05b4942ed" and 
+        msg == 2 ) then 
+      -- print( "**** RESETTING SRUN TO EMPTY ***" )
+      last_srun = ""
+   end
+end
+
+--
+-- Plugin handlers
+--
+room_locator_config = {}
+
+function OnPluginSaveState()
+   -- save state, by dumping into mushclient var which then serialize it.
+   local config = {}
+   config.room_names = room_names
+   config.area_names = area_names
+   
+   var.room_locator_config = serialize.save( "room_locator_config", config )
+end
+
+function OnPluginInstall()
+   -- OnHelp()
+   if( var.room_locator_config ) then 
+      loadstring( var.room_locator_config )()
+   end
+   
+   room_names = room_locator_config.room_names or {}
+   area_names = room_locator_config.area_names or {}
+end
+
+
+-- debug
+function dprint(...)
+   if( true ) then return end
+
+   local arg = {...}
+   
+   local print = ""
+   for _,v in pairs( arg ) do
+      print = print .. v
+   end
+   ColourNote( "white", "green", "Room Debug: " .. print )
+end
+
+
+function split(str, pat)
+   local t = {}  -- NOTE: use {n = 0} in Lua-5.0
+   local fpat = "(.-)" .. pat
+   local last_end = 1
+   local s, e, cap = str:find(fpat, 1)
+   while s do
+      if s ~= 1 or cap ~= "" then
+	 table.insert(t,cap)
+      end
+      last_end = e+1
+      s, e, cap = str:find(fpat, last_end)
+   end
+   if last_end <= #str then
+      cap = str:sub(last_end)
+      table.insert(t, cap)
+   end
+   return t
+end
+]]>
+</script>
+</muclient>

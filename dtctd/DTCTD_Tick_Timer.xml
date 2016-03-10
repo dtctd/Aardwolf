@@ -1,0 +1,368 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+
+<muclient>
+<plugin
+   name="DTCTD_Tick_Timer"
+   author="DTCTD"
+   id="e50b1d08a0cfc0ee9c44947c"
+   language="Lua"
+   purpose="The time to the next tick (in seconds), GQuest and Double countdown is shown on the status bar."
+   date_written="2016-10-03 12:00:00"
+   requires="4.31"
+   version="2.1"
+   save_state="n"
+   >
+</plugin>
+
+
+<!--  Timers  -->
+
+<timers>
+	<timer 
+		name="second_timer"
+		enabled="y" 
+		second="1.00" 
+		offset_second="0.00"    
+		script="do_second"		
+	>
+	</timer>
+
+	<timer 
+		name="gq_start_timer"
+		enabled="n" 
+		minute="1"
+		second="32"
+		offset_second="0.00"    
+		script="gq_start_timer"		
+	>
+	</timer>
+
+	
+</timers>
+
+<aliases>
+
+	<!-- Quick Scan -->
+
+	<alias
+		name="QuickScan"
+		match="^qtreport (?<channel>.+)$"
+		regexp="y"
+		enabled="y"
+		sequence="100"
+		script="quest_time_report"
+	>
+	</alias>
+</aliases>
+
+<triggers>
+
+	<!-- Below the flare, you hear Pedwiddle scream 'HEAR ME FOR I HAVE CONQUERED!' -->
+	
+	<!-- You hear a loud roar from Vyragos and the world appears calmer for a while.
+Aardwolf rejoices in the death of another MILLION monsters.
+For the next 60 minutes all experience is doubled!! -->
+
+	<!-- Double experience for 10 minutes courtesy of Vost's daily blessing. -->
+	
+	<!-- [ 10 minutes of double exp started courtesy of donations being open ] -->
+
+	<trigger match="^For the next 60 minutes all experience is doubled\!\!$"
+		name="trg_double1"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="million_init"
+	>
+	</trigger>	
+	
+	<trigger match="^\[ 10 minutes of double exp started courtesy of (?<who>donations) being open \]$"
+		name="trg_double2"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="double_init"
+	>
+	</trigger>	
+
+	<trigger match="^Below the flare\, you hear (?<who>.+) scream '.+'$"
+		name="trg_double3"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="double_init"
+	>
+	</trigger>	
+	
+	<trigger match="^Double experience for 10 minutes courtesy of (?<who>.+)\'s daily blessing\.$"
+		name="trg_double4"
+		enabled="y"
+		regexp="y"
+		sequence="100"
+		script="double_init"
+	>
+	</trigger>		
+
+	
+	<trigger match="Global Quest\: The global quest has been won by \b(?<name>.+)\b \- .+ win\.$"
+		name="gq_timer_won"
+		group="gq_timer"
+		enabled="y"
+		regexp="y"
+		omit_from_output="n"
+		sequence="1"
+		script="gq_complete"
+	>
+	</trigger>
+
+	<trigger match="Completed by \.\.\.\.\.\.\: \[ No Winner \]$"
+		name="gq_no_gq"
+		group="gq_timer"
+		enabled="y"
+		regexp="y"
+		omit_from_output="n"
+		sequence="1"
+		script="gq_no_gq"
+	>
+	</trigger>
+	
+	
+	<!-- You sense that life will return to this area in roughly 4-5 minutes. -->
+</triggers>
+
+<script>
+<![CDATA[
+
+-- pull in telnet option handling
+dofile (GetPluginInfo (GetPluginID (), 20) .. "telnet_options.lua")
+
+local last_tick
+local tick_msg = ""
+
+local gq_timer = -1
+local gq_msg = " GQ: Not joined"
+local gq_reset = false
+local gq_duration = 18
+
+local repop_msg = ""
+
+local double_timer = -1
+local double_msg = ""
+local double_reason = ""
+
+local repop_list = {}
+
+function OnPluginTelnetOption (option)
+
+	--> TICK <--
+	if (option == string.char (101,1)) then
+		last_tick = os.time()
+		show_messages()
+
+		if (double_timer == 0) then
+			double_timer = -1
+			double_msg = ""
+		elseif (double_timer > 0) then
+			double_timer = double_timer - 1
+		end
+
+		
+		if (gq_reset == true) then
+			gq_reset = false
+			gq_timer = gq_duration
+		else
+			if (gq_timer == 0) then
+				gq_timer = -1
+				--Simulate("\n {GQ-Repop} \n")
+				gq_msg = " ** New GQ! ** "
+				Execute("gq i")
+				EnableTimer("gq_start_timer", true)
+			elseif (gq_timer > 0) then
+				gq_timer = gq_timer - 1
+			end
+		end		
+	end 
+end
+
+function OnPluginBroadcast (msg, id, name, text)
+
+	-- Look for GMCP handler.
+	if (id == '3e7dedbe37e44942dd46d264') then
+
+		if (text == "comm.repop") then
+
+--			res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","comm")
+--			luastmt = "repop = " .. gmcparg
+--			assert (loadstring (luastmt or "")) ()
+			
+--			if (repop ~= nil) then
+--				repop_list[repop.zone] = os.time()
+--				Note("Repop - " .. repop.zone .. " " .. repop_list[repop.zone])
+--			end
+
+		end
+	end
+end
+
+
+function double_init(name, line, wildcards)
+	double_timer = 19
+	double_reason = wildcards.who
+end
+
+function million_init(name, line, wildcards)
+	double_timer = 119
+	double_reason = "million"
+end
+
+
+function gq_complete(name, line, wildcards)
+	gq_reset = true
+	gq_msg = " GQ won by " .. wildcards.name
+	
+	show_messages()
+end
+
+function do_second(name, line, wildcards)
+
+	local time = os.time()
+	
+	-- tick
+	last_tick = last_tick or time
+	local seconds = (last_tick + 30) - time
+	tick_msg =  "Tick: " .. seconds
+
+	-- double --
+	if (double_timer >= 0) then
+		double_msg = " Double: " .. seconds_to_minutes((double_timer * 30) + seconds)
+		if (double_reason ~= "") then
+			double_msg = double_msg .. " [" .. double_reason .. "] "
+		end
+	else
+		double_msg = ""
+	end
+
+	-- gq timer --
+	if (gq_timer >= 0) then
+		gq_msg = " GQ: " .. seconds_to_minutes((gq_timer * 30) + seconds)
+	end
+	
+	show_messages()
+end
+
+local gq_start_timer_index = 0
+function gq_start_timer(name, line, wildcards)
+	--Note("Timer")
+	if (gq_start_timer_index > 0) then
+		--Note("timer - in action")
+		gq_start_timer_index = 0
+		EnableTimer("gq_start_timer", false)
+		gq_msg = " GQ: In progress... "
+		Execute("gq p")
+		Execute("swho 11 gq")
+		show_messages()
+	else
+		gq_start_timer_index = 1
+	end
+	
+end
+function gq_no_gq(name, line, wildcards)
+	--Note("ok")
+	gq_msg = " GQ: No Winner "
+	show_messages()
+end
+
+function show_messages()
+
+	SetStatus(string.format("%s   %s   %s   %s", tick_msg, gq_msg, repop_msg, double_msg))
+
+end
+
+function seconds_to_minutes(seconds)
+
+	local mins = math.floor(seconds/ 60)
+	local secs = seconds % 60
+	
+	local minS = ""
+	local secS = ""
+	
+	if (mins > 1) then minS = "s" end
+	if (secs ~= 1) then secS = "s" end
+	
+	if (mins > 0) then
+		if (secs > 0) then
+			return string.format("%s min%s %s sec%s", mins, minS, secs, secS)
+		else
+			return string.format("%s min%s", mins, minS)
+		end
+	else
+		return string.format("%s sec%s", seconds, secS)	
+	end
+
+end
+
+function quest_time_report(name, line, wildcards)
+
+	Execute( string.format("%s %s", wildcards.channel, gq_msg))
+
+end
+
+]]>
+</script>
+
+<![CDATA[
+<!--
+
+gq p
+There is nobody taking part in this global quest right now.
+
+gq i
+---------------------[  CURRENT GLOBAL QUEST DETAILS ]---------------------
+Quest Name.........: [ Global quest # 531063 ]
+Quest Status.......: [ Active ]
+Started By.........: [ Ivar Expeditions (Tm) ]
+Level range........: [  113 ] - [  125 ]
+Quest Duration.....: [  100 ]
+Time Expired.......: [    6 ]
+Time Remaining.....: [   94 ]
+Inactivity Timer...: [ 03:11 ]
+-----------------------------[ Quest Rewards ]-----------------------------
+Quest points.......: [    13 ] ( +3 for each mob killed )
+Gold Coins.........: [ 11300 ]
+---------------------------------------------------------------------------
+
+gq i
+----------------------[  LAST GLOBAL QUEST DETAILS ]----------------------
+Quest Name.........: [ Global quest # 531063 ]
+Quest Status.......: [ Finished ]
+Started By.........: [ Ivar Expeditions (Tm) ]
+Level range........: [  113 ] - [  125 ]
+Quest Duration.....: [  100 ]
+Completed by ......: [ No Winner ]
+-----------------------------[ Quest Rewards ]-----------------------------
+Quest points.......: [    13 ] ( +3 for each mob killed )
+Gold Coins.........: [ 11300 ]
+-----------------------------[ Quest Targets ]-----------------------------
+The targets for this quest were:
+Kill at least 1 * a moon elf (Dark Elf Stronghold).
+Kill at least 1 * Leader of the Rebel Rangers (Deathtrap Dungeon).
+Kill at least 1 * A sleeping servant (Elemental Chaos).
+Kill at least 2 * a practicing enchanter (Insanitaria).
+Kill at least 2 * An experimenting wizard (Insanitaria).
+Kill at least 1 * a member of the 'Sorr tribe (Living Mines of Dak'Tai).
+Kill at least 2 * a casanova (Masquerade Island).
+Kill at least 1 * Garret (Masquerade Island).
+Kill at least 1 * Candice (Masquerade Island).
+Kill at least 1 * a prisoner (Realm of the Firebird).
+Kill at least 1 * a Templar guard (Rosewood Castle).
+Kill at least 2 * a priest of the Dark God (The Empire of Talsa).
+---------------------------------------------------------------------------
+
+gq c
+You are not on a global quest.
+You may win 2 more gquests at this level.
+
+-->
+]]>
+</muclient>
