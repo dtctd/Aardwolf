@@ -1,0 +1,394 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<muclient>
+<plugin
+   name="DTCTD_Bagman"
+   author="Lunk"
+   id="c25ca494513c2af412b7920f"
+   language="Lua"
+   purpose="bags manager"
+   save_state="y"
+   date_written="2015-11-04 23:16:17"
+   requires="4.98"
+   version="2.36"
+   >
+<description trim="y">
+<![CDATA[
+
+---* POTIONS *---
+
+potman bag *  --->  sets potman bag for potions
+potman hp *   --->  sets potman hp potion to *
+potman mn *   --->  sets potman mn potion to *
+potman mv *   --->  sets potman mv potion to *
+
+potman  --->  displays current settings
+
+epot  --->  examines (looks in) potions bag
+
+phb   --->  puts all hp potions into potions bag
+plb   --->  puts all mn potions into potions bag
+prb   --->  puts all mv potions into potions bag
+psib  --->  puts all clear sight potions into potions bag
+pshb  --->  puts all shadowbane potions into potions bag
+pclb  --->  puts all clear elixir potions into potions bag
+pwob  --->  puts all eyes of the wolf potions into potions bag
+
+ghb   --->  gets all hp potions from potions bag and sells them
+glb   --->  gets all mn potions from potions bag and sells them
+grb   --->  gets all mv potions from potions bag and sells them
+gsib  --->  gets all sight potions from potions bag and sells them
+gshb  --->  gets all shadowbane potions from potions bag and sells them
+gclb  --->  gets all clear elixir potions from potions bag and sells them
+gwob  --->  gets all eyes of the wolf potions from potions bag and sells them
+
+qp   --->  gets and quaffs hp potion (for health)
+ql   --->  gets and quaffs mn potion (for mana)
+qr   --->  gets and quaffs mv potion (for movement)
+qsi  --->  gets and quaffs sight beyond sight (for detect invis)
+qsh  --->  gets and quaffs shadowbane (for detect hidden)
+qcl  --->  gets and quaffs clear elixir (for invis/hide)
+qwo  --->  gets and quaffs eyes of the wolf (for night vision)
+
+eq bag *  --->  sets regular eq bag to *
+eq put *  --->  puts item * into eq bag
+eq get *  --->  gets item * from eq bag
+eq look   --->  looks in (examines) eq bag
+
+
+bagman help --->  displays this help
+]]>
+</description>
+</plugin>
+<include name="constants.lua"/>
+<aliases>
+  <alias
+   match="ghb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.@potion_hp @potion_bag
+  sell all.@potion_hp</send>
+  </alias>
+  <alias
+   match="glb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.@potion_mn @potion_bag
+  sell all.@potion_mn</send>
+  </alias>
+  <alias
+   match="grb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.@potion_mv @potion_bag
+  sell all.@potion_mv</send>
+  </alias>
+  <alias
+   match="gsib"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.sight @potion_bag
+  sell all.sight</send>
+  </alias>
+  <alias
+   match="gshb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.shadowbane @potion_bag
+  sell all.shadowbane</send>
+  </alias>
+  <alias
+   match="gclb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.@clear @potion_bag
+  sell all.clear</send>
+  </alias>
+  <alias
+   match="gwob"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get all.wolf @potion_bag
+  sell all.wolf</send>
+  </alias>
+  
+  <alias
+   match="phb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.@potion_hp @potion_bag</send>
+  </alias>
+  <alias
+   match="plb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.@potion_mn @potion_bag</send>
+  </alias>
+  <alias
+   match="prb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.@potion_mv @potion_bag</send>
+  </alias>
+    <alias
+   match="psib"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.sight @potion_bag</send>
+  </alias>
+  <alias
+   match="pshb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.shadowbane @potion_bag</send>
+  </alias>
+  <alias
+   match="pclb"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.clear @potion_bag</send>
+  </alias>
+  <alias
+   match="pwob"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put all.wolf @potion_bag</send>
+  </alias>
+
+  <alias
+   match="potman hp *"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   send_to="12"
+   sequence="100"
+  >
+  <send>SetVariable ("potion_hp", "%1")
+ColourNote ("yellow", "", "Set potman hp potion to : %1")</send>
+  </alias>
+  <alias
+   match="potman mn *"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   send_to="12"
+   sequence="100"
+  >
+  <send>SetVariable ("potion_mn", "%1")
+ColourNote ("yellow", "", "Set potman mn potion to : %1")</send>
+  </alias>
+  <alias
+   match="potman"
+   enabled="y"
+   expand_variables="y"
+   send_to="12"
+   sequence="100"
+  >
+  <send>ColourNote ("yellow", "", "potman bag : @potion_bag")
+ColourNote ("yellow", "", "potman hp potion : @potion_hp")
+ColourNote ("yellow", "", "potman mn potion : @potion_mn")
+ColourNote ("yellow", "", "potman mv potion : @potion_mv")</send>
+  </alias>
+  <alias
+   match="potman mv *"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   send_to="12"
+   sequence="100"
+  >
+  <send>SetVariable ("potion_mv", "%1")
+ColourNote ("yellow", "", "Set potman mv potion to : %1")</send>
+  </alias>
+  <alias
+   match="potman bag *"
+   enabled="y"
+   expand_variables="y"
+   send_to="12"
+   sequence="100"
+  >
+  <send>SetVariable ("potion_bag", "%1")
+ColourNote ("yellow", "", "Set potman bag to : %1")</send>
+  </alias>
+  <alias
+   match="qp"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get @potion_hp @potion_bag
+  quaff @potion_hp</send>
+  </alias>
+  <alias
+   match="ql"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get @potion_mn @potion_bag
+  quaff @potion_mn</send>
+  </alias>
+  <alias
+   match="qr"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get @potion_mv @potion_bag
+  quaff @potion_mv</send>
+  </alias>
+  <alias
+   match="qsi"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get sight @potion_bag
+  quaff sight</send>
+  </alias>
+  <alias
+   match="qsh"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get shadowbane @potion_bag
+  quaff shadowbane</send>
+  </alias>
+  <alias
+   match="qcl"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get clear @potion_bag
+  quaff clear</send>
+  </alias>
+  <alias
+   match="qwo"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get wolf @potion_bag
+  quaff wolf</send>
+  </alias>
+
+  <alias
+   match="epot"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>examine @potion_bag</send>
+  </alias>
+</aliases>
+<aliases>
+  <alias
+   script="OnHelp"
+   match="bagman help"
+   enabled="y"
+  >
+  </alias>
+  eq bag *  --->  sets regular eq bag to *
+eq put *  --->  puts item * into eq bag
+eq get *  --->  gets item * from eq bag
+eq look   --->  looks in (examines) eq bag
+  <alias
+   match="eq bag *"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   send_to="12"
+   sequence="100"
+  >
+  <send>SetVariable ("eq_bag", "%1")
+ColourNote ("yellow", "", "Set eq bag to : %1")</send>
+  </alias>
+  <alias
+   match="eq put *"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>put %1 @eq_bag</send>
+  </alias>
+  <alias
+   match="eq get *"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>get %1 @eq_bag</send>
+  </alias>
+  <alias
+   match="eq look"
+   enabled="y"
+   expand_variables="y"
+   group="potman"
+   sequence="100"
+  >
+  <send>examine @eq_bag</send>
+  </alias>
+
+</aliases>
+<script>
+<![CDATA[
+function OnHelp ()
+  world.Note (world.GetPluginInfo (world.GetPluginID (), 3))
+end
+]]>
+</script> 
+</muclient>

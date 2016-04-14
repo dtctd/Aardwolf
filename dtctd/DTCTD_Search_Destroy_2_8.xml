@@ -37,7 +37,6 @@ SEARCH AND DESTROY USAGE:
         - Typing just this will hunt for the last mob you performed "ht" or 
 		"qw" for
 
-
 >   ht find 
 		- try and hunt the last mob you "couldn't hunt for some reason" to
 		confirm if it is in your current room or not
@@ -221,10 +220,12 @@ Quick Scan
 <!-- You are certain that .+ is .+ from here\. -->
 <!-- .+ is here\! -->
 
+<!--match="^You are certain that .+ is .+ from here\.|You are almost certain that .+ is .+ from here\.|You are confident that .+ passed through here, heading .+\.|The trail of .+ is confusing, but you're reasonably sure .+ headed .+\.|There are traces of .+ having been here. Perhaps they lead .+\?|You have no idea what you\'re doing\, but maybe .+ left .+\?|You couldn\'t find a path to .+ from here\.|.+ is here\!$"-->
+
 	<trigger
 		enabled="n"
 		group="HuntTrick"
-		match="^You are certain that .+ is .+ from here\.|You are almost certain that .+ is .+ from here\.|You are confident that .+ passed through here, heading .+\.|The trail of .+ is confusing, but you're reasonably sure .+ headed .+\.|There are traces of .+ having been here. Perhaps they lead .+\?|You have no idea what you\'re doing\, but maybe .+ left .+\?|You couldn\'t find a path to .+ from here\.|.+ is here\!$"
+		match="^You are certain that .+ is .+ from here\.|You are almost certain that .+ is .+ from here\.|You are confident that .+ passed through here, heading .+\.|The trail of .+ is confusing, but you're reasonably sure .+ headed .+\.|There are traces of .+ having been here. Perhaps they lead .+\?|You have no idea what you\'re doing\, but maybe .+ left .+\?|You have no idea what you\'re doing\, but maybe .+ is .+\?|You couldn\'t find a path to .+ from here\.|.+ is here\!$"
 		regexp="y"
 		sequence="100"
 		script="hunt_trick_continue"
@@ -312,7 +313,7 @@ Quick Scan
 		EnableTriggerGroup("AutoHunt", false)
 	</send>
 	</trigger>
-	
+		
 	<!-- page size -->
 	
 	<trigger
@@ -568,7 +569,14 @@ Quick Scan
 		DebugNote("qw data - " .. serialize.save_simple(qw))
 			
 		create_quick_where_trigger(qw.result_match_name)
-		Execute(string.format("where %s.%s", qw.index, qw.short_name))
+		--Execute(string.format("where %s.%s", qw.index, qw.short_name))
+		
+		require "wait"
+		wait.make (function ()
+			Execute(string.format("where %s.%s", qw.index, qw.short_name))
+			wait.regexp (qw.full_name, 10)
+			Execute("go")
+		end)
 
 	end
 	

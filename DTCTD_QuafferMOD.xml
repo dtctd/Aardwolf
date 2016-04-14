@@ -1,0 +1,347 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE muclient>
+<muclient>
+<plugin
+  name="DTCTD_Quaffer"
+  author="Abelinc/Luanewb"
+  id="91db3f0b6bb87464ca75f5c7"
+  language="Lua"
+  purpose="Auto Quaffs Potions"
+  date_written="2015-03-01"
+  requires="4.00"
+  version="1.21"
+  save_state="y"
+  >
+<description trim="y">
+<![CDATA[
+Install this plugin to automatically quaff potions when
+hp/mn/mv drops below user-defined percentage
+ 
+qff                     --> Displays the current values
+ 
+qff bag <bagname>       --> Sets which container to get potions from
+ 
+qff hp potion <potname> --> Sets which hp potion to quaff
+ 
+qff mn potion <potname> --> Sets which mana potion to quaff
+ 
+qff mv potion <potname> --> Sets which moves potion to quaff
+ 
+qff hp percent #        --> Sets the hp percent you must fall below to quaff
+ 
+qff mn percent #        --> Sets the mn percent you must fall below to quaff
+ 
+qff mv percent #        --> Sets the mv percent you must fall below to quaff
+ 
+qff hp count #          --> Sets how many consecutive rounds the plugin
+                           will quaff hp pots before skipping a round
+                                                       
+qff mn count #          --> Sets how many consecutive rounds the plugin
+                           will quaff mn pots before skipping a round
+                                                       
+qff mv count #          --> Sets how many consecutive rounds the plugin
+                           will quaff mv pots before skipping a round
+                                                       
+qff on/off              --> Turns the actions of the plugin on or off
+]]>
+</description>
+</plugin>
+<aliases>
+  <alias
+  name="DTCTD_Quaffer"
+  script="qff_settings"
+  match="^qff ?(hp percent|mn percent|mv percent|hp count|mn count|mv count|hp potion|mn potion|mv potion|aspell|bag|on|off|help)?( [a-z0-9]+)?"
+  enabled="y"
+  regexp="y"
+  ignore_case="y"
+  sequence="100"
+ >
+  </alias>
+  </aliases>
+  <script>
+ 
+<![CDATA[
+require "checkplugin"
+require "serialize"
+require "commas"
+require "gmcphelper"
+function OnPluginBroadcast (msg, id, name, text)
+  -- Look for GMCP handler.
+  if (id == '3e7dedbe37e44942dd46d264') then
+     if (text == "char.vitals") then
+        res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","char")
+                 luastmt = "gmcpdata = " .. gmcparg
+        assert (loadstring (luastmt or "")) ()
+                   do_autoquaff_hp ()
+                   do_autoquaff_mn ()
+                   do_autoquaff_mv ()
+				   do_autospell ()
+     end
+  end
+end
+ 
+function do_autoquaff_hp ()
+        if (os.time () - autoquaff_lastfired_hp) > 3 then -- if we've fired hp within 3 seconds, don't bother with other checks, do nothing
+                if qff_enable == "yes" then -- if not enabled, don't do anything
+                        if (gmcpval("status.state")) == "8" then
+                                qff_currcount_hp = 0 -- if we're not fighting, then reset quaff counts for hp
+                        end
+                        if (gmcpval("status.state")) == "8" then -- if fighting
+                                if tonumber ((tonumber(gmcpval("vitals.hp"))/tonumber(gmcpval("maxstats.maxhp"))*100)) < tonumber (qff_percent_hp) then -- if HP low
+                                        if tonumber (qff_currcount_hp) < tonumber (qff_count_hp) then -- if we haven't overquaffed hp yet
+                                                Send ("get " .. qff_hp_potion .. " " .. qff_bag)
+                                                Send ("quaff " .. qff_hp_potion)
+                                                qff_currcount_hp = qff_currcount_hp + 1
+                                                autoquaff_lastfired_hp = os.time ()
+                                                else qff_currcount_hp = 0 -- if we had overquaffed, we're only skipping 1 round and back at it
+                                                autoquaff_lastfired_hp = os.time ()
+                                        end -- end the overquaffing checks
+                         else qff_currcount_hp = 0
+                                end -- end HP check
+						end -- end if fighting
+                end -- end if enabled check
+        end -- end 3 second time check
+end -- do_autoquaff_hp
+
+function do_autoquaff_mn ()
+        if (os.time () - autoquaff_lastfired_mn) > 3 then -- checkif we've fired mn within 3 seconds, don't bother with other checks, do nothing
+                if qff_enable == "yes" then -- checkif not enabled, don't do anything
+                        if (gmcpval("status.state")) == "8" then
+                                qff_currcount_mn = 0 -- checkif we're not fighting, then reset quaff counts for mn
+                                end
+                                if (gmcpval("status.state")) == "8" then -- checkif fighting
+                                        if tonumber ((tonumber(gmcpval("vitals.mana"))/tonumber(gmcpval("maxstats.maxmana"))*100)) < tonumber (qff_percent_mn) then -- checkif MN low
+                                                if tonumber (qff_currcount_mn) < tonumber (qff_count_mn) then -- checkif we haven't overquaffed mn yet
+                                                Send ("get " .. qff_mn_potion .. " " .. qff_bag)
+                                                Send ("quaff " .. qff_mn_potion)
+                                                qff_currcount_mn = qff_currcount_mn + 1
+                                                autoquaff_lastfired_mn = os.time ()
+                                                else qff_currcount_mn = 0 -- checkif we had overquaffed, we're only skipping 1 round and back at it
+                                                autoquaff_lastfired_mn = os.time ()
+                                        end -- end the overquaffing checks
+                                        else qff_currcount_mn = 0
+                                end -- end MN check
+                        end -- end checkif fighting
+                end -- end checkif enabled check
+        end -- end 3 second time check
+end -- do_autoquaff_mn
+ 
+function do_autoquaff_mv ()
+        if (os.time () - autoquaff_lastfired_mv) > 3 then -- if we've fired within 3 seconds, don't bother with other checks, do nothing
+                if qff_enable == "yes" then -- if not enabled, don't do anything
+                        if (gmcpval("status.state")) == "8" then
+                        qff_currcount_mv = 0 -- if we're not fighting, then reset quaff counts for mv
+                        end
+                        if (gmcpval("status.state")) == "8" then -- if fighting
+                                if tonumber ((tonumber(gmcpval("vitals.moves"))/tonumber(gmcpval("maxstats.maxmoves"))*100)) < tonumber (qff_percent_mv) then -- if MV low
+                                        if tonumber (qff_currcount_mv) < tonumber (qff_count_mv) then -- if we haven't overquaffed mv yet
+                                        Send ("g " .. qff_mv_potion .. " " .. qff_bag)
+                                        Send ("quaff " .. qff_mv_potion)
+                                        qff_currcount_mv = qff_currcount_mv + 1
+                                        autoquaff_lastfired_mv = os.time ()
+                                        else qff_currcount_mv = 0 -- if we had overquaffed, we're only skipping 1 round and back at it
+                                        autoquaff_lastfired_mv = os.time ()
+                                        end -- end the overquaffing checks
+                                else qff_currcount_mv = 0
+                                end -- end MV check
+                        end -- end if fighting
+                end -- end if enabled check
+        end -- end 3 second time check
+end -- do_autoquaff_mv
+
+function do_autospell ()
+	if (os.time () - autoquaff_lastfired_spell) > 1 then -- if we've fired within 1 seconds, don't bother with other checks, do nothing
+        if qff_enable == "yes" and qff_aspellenabled == "yes" then -- if not enabled, don't do anything
+            if (gmcpval("status.state")) == "8" then -- if fighting
+				Send ("" .. qff_aspell)
+                autoquaff_lastfired_spell = os.time ()
+                                        
+            end -- end if fighting
+        end -- end if enabled check
+    end -- end 1 second time check
+end
+
+function qff_settings (name, line, wildcards)
+        if wildcards [1] == "" then
+                qff_tellme ()
+        elseif wildcards [1] == "on" then
+                qff_enable = "yes"
+                        ColourNote ("yellow", "", "Quaffer plugin enabled.")
+        elseif wildcards [1] == "off" then
+                qff_enable = "no"
+                        ColourNote ("yellow", "", "Quaffer plugin disabled.")
+        elseif wildcards [1] == "help" then
+                        qff_help ()
+        else
+                if wildcards [2] == "" then
+                        ColourNote ("yellow", "", "You need to enter a value!")
+                        return
+        end
+                        if wildcards [1] == "hp potion" then
+                                qff_hp_potion = wildcards [2]
+                                ColourNote("yellow", "", "Set quaffer heal pot to : " .. qff_hp_potion)
+                        elseif wildcards [1] == "mn potion" then
+                                qff_mn_potion = wildcards [2]
+                                ColourNote("yellow", "", "Set quaffer mana pot to : " .. qff_mn_potion)
+                        elseif wildcards [1] == "mv potion" then
+                                qff_mv_potion = wildcards [2]
+                                ColourNote("yellow", "", "Set quaffer moves pot to : " .. qff_mv_potion)
+                        elseif wildcards [1] == "bag" then
+                                qff_bag = wildcards [2]
+                                ColourNote("yellow", "", "Set quaffer bag to : " .. qff_bag)
+						elseif wildcards [1] == "aspell" then
+                                qff_aspell = wildcards [2]
+                                ColourNote("yellow", "", "Set quaffer Spell to : " .. qff_aspell)
+						elseif wildcards [1] == "aspellenabled" then
+                                qff_aspellenabled = wildcards [2]
+                                ColourNote("yellow", "", "Set quaffer Spellenabled to : " .. qff_aspellenabled)
+                        else
+                                if wildcards [1] == "hp percent" then
+                                        qff_percent_hp = tonumber (wildcards [2])
+                                        ColourNote ("yellow", "", "Set quaffer hp percent to : " .. qff_percent_hp)
+                                elseif wildcards [1] == "mn percent" then
+                                        qff_percent_mn = tonumber (wildcards [2])
+                                        ColourNote ("yellow", "", "Set quaffer mn percent to : " .. qff_percent_mn)
+                                elseif wildcards [1] == "mv percent" then
+                                        qff_percent_mv = tonumber (wildcards [2])
+                                        ColourNote ("yellow", "", "Set quaffer mv percent to : " .. qff_percent_mv)
+                                elseif wildcards [1] == "hp count" then
+                                        qff_count_hp = tonumber (wildcards [2])
+                                        ColourNote ("yellow", "", "Set quaffer hp count to : " .. qff_count_hp)
+                                elseif wildcards [1] == "mn count" then
+                                        qff_count_mn = tonumber (wildcards [2])
+                                        ColourNote ("yellow", "", "Set quaffer mn count to : " .. qff_count_mn)
+                                elseif wildcards [1] == "mv count" then
+                                        qff_count_mv = tonumber (wildcards [2])
+                                        ColourNote ("yellow", "", "Set quaffer mv count to : " .. qff_count_mv)
+                                end
+                        end                    
+                end
+end -- qff_settings
+ 
+function qff_tellme (name, line, wildcards)
+        ColourNote ("yellow", "", "Bag        		: " .. qff_bag)
+        ColourNote ("yellow", "", "HP Potion  		: " .. qff_hp_potion)
+        ColourNote ("yellow", "", "MN Potion  		: " .. qff_mn_potion)
+        ColourNote ("yellow", "", "MV Potion  		: " .. qff_mv_potion)
+        ColourNote ("yellow", "", "HP Percent 		: " .. qff_percent_hp)
+        ColourNote ("yellow", "", "MN Percent 		: " .. qff_percent_mn)
+        ColourNote ("yellow", "", "MV Percent 		: " .. qff_percent_mv)
+        ColourNote ("yellow", "", "HP Count   		: " .. qff_count_hp)
+        ColourNote ("yellow", "", "MN Count   		: " .. qff_count_mn)
+        ColourNote ("yellow", "", "MV Count   		: " .. qff_count_mv)
+		ColourNote ("yellow", "", "Spell      		: " .. qff_aspell)
+		ColourNote ("yellow", "", "Spell Enabled	: " .. qff_aspellenabled)
+        ColourNote ("yellow", "", "Enabled    		: " .. qff_enable)
+end
+ 
+function qff_help (name, line, wildcards)
+ ColourNote ("teal", "", world.GetPluginInfo (world.GetPluginID (), 3))
+ return true -- done  
+end -- qff_help
+ 
+function OnPluginInstall ()
+if GetVariable ("enabled") == "false" then
+   ColourNote ("yellow", "", "Warning: Plugin " .. GetPluginName ().. " is currently disabled.")
+   check (EnablePlugin(GetPluginID (), false))
+   return
+end -- they didn't enable us last time
+ 
+ OnPluginEnable ()  -- do initialization stuff
+ end -- OnPluginInstall
+ 
+function OnPluginEnable ()
+        checkplugin ("3e7dedbe37e44942dd46d264", "GMCP_handler")
+        qff_count_hp = GetVariable ("qff_count_hp")
+        if GetVariable ("qff_count_hp") == nil then
+                SetVariable ("qff_count_hp", tonumber(1))
+        end
+        qff_count_mn = GetVariable("qff_count_mn")
+        if GetVariable ("qff_count_mn") == nil then
+                SetVariable ("qff_count_mn", tonumber(1))
+		end
+        qff_count_mv = GetVariable ("qff_count_mv")
+        if GetVariable ("qff_count_mv") == nil then
+                SetVariable ("qff_count_mv", tonumber(1))
+        end
+        qff_bag = GetVariable ("qff_bag")
+        if GetVariable ("qff_bag") == nil then
+                SetVariable ("qff_bag", "bag")
+        end
+        qff_hp_potion = GetVariable ("qff_hp_potion")
+        if GetVariable ("qff_hp_potion") == nil then
+                SetVariable ("qff_hp_potion", "heal")
+        end
+        qff_mn_potion = GetVariable ("qff_mn_potion")
+        if GetVariable ("qff_mn_potion") == nil then
+                SetVariable ("qff_mn_potion", "lotus")
+        end
+        qff_mv_potion = GetVariable ("qff_mv_potion")
+        if GetVariable ("qff_mv_potion") == nil then
+                SetVariable ("qff_mv_potion", "tea")
+        end
+        qff_percent_hp = GetVariable ("qff_percent_hp")
+        if GetVariable ("qff_percent_hp") == nil then
+                SetVariable ("qff_percent_hp", "50")
+        end
+        qff_percent_mn = GetVariable ("qff_percent_mn")
+        if GetVariable ("qff_percent_mn") == nil then
+                SetVariable ("qff_percent_mn", "50")
+        end
+        qff_percent_mv = GetVariable ("qff_percent_mv")
+        if GetVariable ("qff_percent_mv") == nil then
+                SetVariable ("qff_percent_mv", "50")
+        end
+        qff_count_hp = GetVariable ("qff_count_hp")
+        if GetVariable ("qff_count_hp") == nil then
+                SetVariable ("qff_count_hp", tonumber "30")
+        end
+        qff_count_mn = GetVariable ("qff_count_mn")
+        if GetVariable ("qff_count_mn") == nil then
+                SetVariable ("qff_count_mn", tonumber "30")
+        end
+        qff_count_mv = GetVariable ("qff_count_mv")
+        if GetVariable ("qff_count_mv") == nil then
+                SetVariable ("qff_count_mv", tonumber "30")
+        end
+		qff_aspell = GetVariable ("qff_aspell")
+        if GetVariable ("qff_aspell") == nil then
+                SetVariable ("qff_aspell", "bash")
+        end
+        qff_aspellenabled = GetVariable ("qff_aspellenabled")
+        if GetVariable ("qff_aspellenabled") == nil then
+                SetVariable ("qff_aspellenabled", "yes")
+        end
+		qff_enable = GetVariable ("qff_enable")
+        if GetVariable ("qff_enable") == nil then
+                SetVariable ("qff_enable", "yes")
+        end
+       
+        qff_aspellenabled = GetVariable ("qff_aspellenabled")
+		qff_enable = GetVariable ("qff_enable")
+        autoquaff_lastfired_hp = os.time ()
+        autoquaff_lastfired_mn = os.time ()
+        autoquaff_lastfired_mv = os.time ()
+		autoquaff_lastfired_spell = os.time ()
+        Send_GMCP_Packet("request char")
+end -- OnPluginEnable
+ 
+function OnPluginSaveState ()
+ SetVariable ("enabled", tostring (GetPluginInfo (GetPluginID (), 17)))
+ SetVariable ("qff_percent_hp", qff_percent_hp)
+ SetVariable ("qff_percent_mn", qff_percent_mn)
+ SetVariable ("qff_percent_mv", qff_percent_mv)
+ SetVariable ("qff_count_hp", qff_count_hp)
+ SetVariable ("qff_count_mn", qff_count_mn)
+ SetVariable ("qff_count_mv", qff_count_mv)
+ SetVariable ("qff_hp_potion", qff_hp_potion)
+ SetVariable ("qff_mn_potion", qff_mn_potion)
+ SetVariable ("qff_mv_potion", qff_mv_potion)
+ SetVariable ("qff_bag", qff_bag)
+ SetVariable ("qff_aspell", qff_aspell)
+ SetVariable ("qff_aspellenabled", qff_aspellenabled)
+ SetVariable ("qff_enable", qff_enable)
+ end -- OnPluginSaveState
+]]>
+</script>
+</muclient>

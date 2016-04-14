@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="iso-8859-1"?>
+<!DOCTYPE muclient>
+<!-- Saved on Saturday, July 05, 2008, 4:46 PM -->
+<!-- MuClient version 4.31 -->
+
+<muclient>
+<plugin
+   name="DTCTD_Auto_Noexp"
+   author="DTCTD"
+   id="e50b1d08a0cfc0ee9c442401"
+   language="Lua"
+   purpose="Turn on noexp below 30%"
+   date_written="2016-10-03 12:00:00"
+   requires="4.76"
+   version="1.0"
+   save_state="y"
+   >
+</plugin>
+
+
+<aliases>
+
+<alias
+	name="DTCTD_Quaffer"
+	script="noxp_settings"
+	match="^noxp ?(number|on|off)?( [a-z0-9]+)?"
+	enabled="y"
+	regexp="y"
+	ignore_case="y"
+	sequence="100"
+>
+</alias>
+
+</aliases>
+
+<triggers>
+
+<trigger
+	enabled="y"
+	match="^You may take a campaign at this level.$"
+	regexp="y"
+	sequence="100"
+	script="cp_available"
+>
+</trigger>
+
+</triggers>
+
+<!--  Get our standard constants -->
+<include name="constants.lua"/>
+
+<script>
+<![CDATA[
+
+require "checkplugin"
+require "serialize"
+require "commas"
+require "gmcphelper"
+
+function OnPluginBroadcast (msg, id, name, text)
+  -- Look for GMCP handler.
+  if (id == '3e7dedbe37e44942dd46d264') then
+     if (text == "char.stats" or text == "char.maxstats" or text == "char.vitals" or text == "char.worth" or text == "char.status") then
+        res, gmcparg = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","char")
+                 luastmt = "gmcpdata = " .. gmcparg
+        assert (loadstring (luastmt or "")) ()
+                   do_checknoxp ()
+     end
+  end
+end -- onpluginbroadcast
+
+function do_checknoxp ()
+	
+	--local rest
+	local charcurrenttnl
+	res, charcurrenttnl = CallPlugin("3e7dedbe37e44942dd46d264","gmcpval","char.status.tnl")
+
+	if tonumber(charcurrenttnl) < tonumber (noxp_number) then
+		if noxp_available == "yes" and noxp_status == "off" then
+			Execute("noexp")
+			ColourNote ("yellow", "", "Noexp has been set!")
+			SetVariable ("noxp_status", "on")
+		end
+	end
+	
+end -- do_checknoxp
+
+function cp_available ()
+	noxp_cp_available = "yes"
+end
+
+function noxp_settings (name, line, wildcards)
+        if wildcards [1] == "" then
+			noxp_tellme ()
+        elseif wildcards [1] == "on" then
+            noxp_enable = "yes"
+            ColourNote ("yellow", "", "Noxp plugin enabled.")
+        elseif wildcards [1] == "off" then
+            noxp_enable = "no"
+            ColourNote ("yellow", "", "Noxp plugin disabled.")
+        elseif wildcards [1] == "help" then
+            noxp_help ()
+        else
+            if wildcards [2] == "" then
+				ColourNote ("yellow", "", "You need to enter a value!")
+                return
+			end
+            if wildcards [1] == "hp potion" then
+                noxp_number = wildcards [2]
+                ColourNote("yellow", "", "Set noxp number to : " .. noxp_number)
+            end                    
+        end    
+end -- noxp_settings
+
+function noxp_tellme (name, line, wildcards)
+        ColourNote ("yellow", "", "Status        : " .. noxp_status)
+		ColourNote ("yellow", "", "CP available        : " .. noxp_available)
+		ColourNote ("yellow", "", "Turn of at        : " .. noxp_number)
+        ColourNote ("yellow", "", "Enabled    : " .. noxp_enable)
+end
+
+function noxp_help (name, line, wildcards)
+ ColourNote ("teal", "", world.GetPluginInfo (world.GetPluginID (), 3))
+ return true -- done  
+end -- noxp_help
+
+function OnPluginInstall ()
+if GetVariable ("enabled") == "false" then
+   ColourNote ("yellow", "", "Warning: Plugin " .. GetPluginName ().. " is currently disabled.")
+   check (EnablePlugin(GetPluginID (), false))
+   return
+end -- they didn't enable us last time
+ 
+ OnPluginEnable ()  -- do initialization stuff
+ end -- OnPluginInstall
+
+function OnPluginEnable ()
+        checkplugin ("3e7dedbe37e44942dd46d264", "GMCP_handler")
+        noxp_status = GetVariable ("noxp_status")
+        if GetVariable ("noxp_status") == nil then
+            --do_checknoxp ()
+        end
+		
+		noxp_available = GetVariable ("noxp_available")
+        if GetVariable ("noxp_available") == nil then
+            Send("cp c")
+        end
+        
+		noxp_number = GetVariable ("noxp_number")
+        if GetVariable ("noxp_number") == nil then
+            SetVariable ("noxp_number", tonumber(300))
+        end
+		
+        noxp_enable = GetVariable ("noxp_enable")
+        if GetVariable ("noxp_enable") == nil then
+            SetVariable ("noxp_enable", "yes")
+        end
+       
+        noxp_enable = GetVariable ("noxp_enable")
+        Send_GMCP_Packet("request char")
+end -- OnPluginEnable
+
+
+function OnPluginSaveState ()
+	SetVariable ("noxp_enable", noxp_enable)
+	SetVariable ("noxp_status", noxp_status)
+	SetVariable ("noxp_available", noxp_available)
+	SetVariable ("noxp_number", tonumber(noxp_number))
+end -- OnPluginSaveState	
+
+]]>
+</script>
+
+</muclient>

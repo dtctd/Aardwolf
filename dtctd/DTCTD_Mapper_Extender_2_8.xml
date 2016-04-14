@@ -1253,6 +1253,7 @@ http://code.google.com/p/aardwolf-scriptalicious/wiki/MapperHelp
 				remote_guess_mob_name(localItem.mob, localItem.areaId, true)
 				
 				search_rooms(localItem.roomName .. "|" .. localItem.areaId, "area", localItem.mob)
+				Execute("go")
 				
 			end
 		else
